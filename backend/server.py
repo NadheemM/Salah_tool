@@ -17,8 +17,8 @@ import json
 import math
 import re
 
-import pandas as pd
 import openpyxl
+import xlsxwriter
 from reportlab.lib import colors
 from reportlab.lib.pagesizes import A4, landscape
 from reportlab.platypus import SimpleDocTemplate, Table as RLTable, TableStyle, Paragraph, Spacer
@@ -342,17 +342,15 @@ async def upload_waqth_chart(
                 # Normalize keys to lowercase
                 prayer_times.append({k.strip().lower(): v for k, v in row.items()})
         elif file.filename.endswith(('.xlsx', '.xls')):
-            df = pd.read_excel(io.BytesIO(content))
-            # Normalize column names to lowercase
-            df.columns = [col.strip().lower() for col in df.columns]
-            prayer_times = df.to_dict('records')
-            # Convert any NaN to empty string
-            for row in prayer_times:
-                for key in list(row.keys()):
-                    if pd.isna(row[key]):
-                        row[key] = ""
-                    else:
-                        row[key] = str(row[key])
+            wb = openpyxl.load_workbook(io.BytesIO(content), data_only=True)
+            ws = wb.active
+            headers = [str(cell.value).strip().lower() if cell.value is not None else "" for cell in ws[1]]
+            for row in ws.iter_rows(min_row=2, values_only=True):
+                row_dict = {}
+                for i, value in enumerate(row):
+                    if i < len(headers):
+                        row_dict[headers[i]] = "" if value is None else str(value)
+                prayer_times.append(row_dict)
         else:
             raise HTTPException(status_code=400, detail="Unsupported file format. Use CSV or Excel.")
     except Exception as e:
@@ -655,9 +653,16 @@ async def export_excel(request: Request):
     masjid_name = slugify_name(body.get("masjid_name", "salah_times"))
     
     output = io.BytesIO()
-    df = pd.DataFrame(data)
-    with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
-        df.to_excel(writer, index=False, sheet_name='Salah Times')
+    workbook = xlsxwriter.Workbook(output)
+    worksheet = workbook.add_worksheet('Salah Times')
+    if data:
+        headers = list(data[0].keys())
+        for col, header in enumerate(headers):
+            worksheet.write(0, col, header)
+        for row_idx, row in enumerate(data, 1):
+            for col, key in enumerate(headers):
+                worksheet.write(row_idx, col, row.get(key, ""))
+    workbook.close()
     output.seek(0)
     
     return StreamingResponse(
