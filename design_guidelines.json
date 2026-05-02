@@ -1,0 +1,85 @@
+{
+  "theme_and_archetype": {
+    "theme": "light",
+    "archetype": "1 (Organic & Earthy)",
+    "description": "Patients/communities need warmth, calm, trust. Dark UI feels clinical/cold. Warm sand and deep forest green provide a grounded, community-focused feel suitable for a masjid management tool."
+  },
+  "colors": {
+    "background_base": "#FCFBF8",
+    "background_surface": "#FFFFFF",
+    "border_subtle": "#EAE6DD",
+    "text_primary": "#1E2522",
+    "text_secondary": "#5C6B64",
+    "brand_primary": "#2B5336",
+    "brand_primary_hover": "#1E3F20",
+    "accent_terracotta": "#C27A62",
+    "accent_sand": "#D4A373",
+    "status_success": "#3A6E48",
+    "status_warning": "#E09A52",
+    "status_error": "#B24C41"
+  },
+  "typography": {
+    "headings_font": "Work Sans",
+    "body_font": "IBM Plex Sans",
+    "hierarchy": {
+      "h1": "text-4xl sm:text-5xl tracking-tight text-[#1E2522]",
+      "h2": "text-2xl sm:text-3xl tracking-tight text-[#1E2522]",
+      "h3": "text-xl sm:text-2xl tracking-tight text-[#1E2522]",
+      "overline": "uppercase text-xs tracking-[0.2em] text-[#5C6B64]",
+      "body": "text-base text-[#1E2522] leading-relaxed",
+      "data_table": "text-sm text-[#1E2522] font-mono",
+      "small": "text-xs text-[#5C6B64]"
+    }
+  },
+  "spacing_and_layout": {
+    "global_padding": "p-4 sm:p-6 md:p-8 lg:p-12",
+    "dashboard_grid": "grid-cols-1 md:grid-cols-3 lg:grid-cols-4 gap-4 md:gap-6",
+    "bento_spans": {
+      "summary": "col-span-1",
+      "primary_data": "col-span-1 md:col-span-2 lg:col-span-3",
+      "feed_list": "col-span-1 row-span-2"
+    },
+    "surface_strategy": "Neumorphism (Clay & Crisp): White or Off-white background, soft shadow (shadow-sm), sharp 1px border (border-[#EAE6DD]). Avoid standard card component heavily, use flat rectangular bounds.",
+    "alignment_rules": "Left-align paragraphs, inputs, dense content. Buttons align relative to container."
+  },
+  "components": {
+    "tables": "Mobile: Avoid horizontal scroll. Use card-based stacking or Overview/Details split (click row to see modal). Desktop: Shadcn Table. Use IBM Plex Sans for tabular numeric data.",
+    "forms": "Shadcn inputs/select heavily customized. Warm borders, soft padding (p-6 container). Inputs should have pure white background against the off-white page background.",
+    "buttons": "Flat design, bg-[#2B5336] text-white hover:bg-[#1E3F20]. No heavy gradients.",
+    "cards": "Subtle roundness max 8px border-radius. Cardless where possible using crisp grid borders.",
+    "dialogs": "Glassmorphism overlays (backdrop-blur-xl bg-white/70) with 1px border.",
+    "navigation": "Sticky glass header (backdrop-blur-xl bg-white/70) with solid bottom border on mobile. Sidebar for desktop with solid #FCFBF8 background."
+  },
+  "motion": {
+    "hover_states": "Cards elevate slightly (-translate-y-1) with shadow-md. Buttons background color darkens on hover with text-white explicitly set.",
+    "transitions": "transition: transform 0.2s ease, opacity 0.2s ease, background-color 0.2s ease",
+    "accessibility": "Respect prefers-reduced-motion. Add aria-hidden='true' to purely decorative items."
+  },
+  "accessibility": {
+    "contrast": "Ensure 4.5:1 ratio for text below 18px. Active/focus states must have higher contrast ring-2 ring-[#2B5336].",
+    "testing_attributes": "All interactive elements MUST include data-testid (e.g., data-testid='masjid-add-button', data-testid='salah-export-pdf')."
+  },
+  "media": {
+    "image_urls": [
+      {
+        "url": "https://images.unsplash.com/photo-1680153120659-d36c692a7083?crop=entropy&cs=srgb&fm=jpg&ixid=M3w3NDk1Nzh8MHwxfHNlYXJjaHwzfHxtb2Rlcm4lMjBtb3NxdWUlMjBtaW5pbWFsJTIwYXJjaGl0ZWN0dXJlfGVufDB8fHx8MTc3NzU1NzM0OXww&ixlib=rb-4.1.0&q=85",
+        "category": "hero_background",
+        "description": "Modern minimalist white mosque structure, used for login page or dashboard hero banner with heavy gradient overlay."
+      },
+      {
+        "url": "https://images.unsplash.com/photo-1680153120669-42919e53b7ff?crop=entropy&cs=srgb&fm=jpg&ixid=M3w3NDk1Nzh8MHwxfHNlYXJjaHwyfHxtb2Rlcm4lMjBtb3NxdWUlMjBtaW5pbWFsJTIwYXJjaGl0ZWN0dXJlfGVufDB8fHx8MTc3NzU1NzM0OXww&ixlib=rb-4.1.0&q=85",
+        "category": "masjid_placeholder",
+        "description": "Minimal mosque dome for default masjid avatar or placeholder."
+      }
+    ]
+  },
+  "instructions_to_main_agent": [
+    "Install required icons: yarn add @phosphor-icons/react",
+    "Use Shadcn components but customize them: Calendar for dates, Select for waqth charts, Dialog for masjid details on mobile.",
+    "Implement Google Auth for login.",
+    "Build a mobile-first 'Overview & Details' layout for Masjids List and Salah tables.",
+    "Data table numeric values MUST use IBM Plex Sans (or font-mono) for tabular lining.",
+    "Ensure the generated Salah calculations support row-level free input for fixed time overrides per prayer.",
+    "Always apply 'data-testid' to interactive elements."
+  ]
+}

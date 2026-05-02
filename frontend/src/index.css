@@ -1,0 +1,76 @@
+@import url('https://fonts.googleapis.com/css2?family=Work+Sans:wght@300;400;500;600;700&family=IBM+Plex+Sans:wght@300;400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --background: 40 33% 98%;
+    --foreground: 155 12% 13%;
+    --card: 0 0% 100%;
+    --card-foreground: 155 12% 13%;
+    --popover: 0 0% 100%;
+    --popover-foreground: 155 12% 13%;
+    --primary: 143 32% 24%;
+    --primary-foreground: 0 0% 100%;
+    --secondary: 40 33% 95%;
+    --secondary-foreground: 155 12% 13%;
+    --muted: 40 20% 94%;
+    --muted-foreground: 155 10% 40%;
+    --accent: 17 45% 57%;
+    --accent-foreground: 0 0% 100%;
+    --destructive: 5 55% 48%;
+    --destructive-foreground: 0 0% 100%;
+    --border: 38 22% 88%;
+    --input: 38 22% 88%;
+    --ring: 143 32% 24%;
+    --chart-1: 143 32% 24%;
+    --chart-2: 17 45% 57%;
+    --chart-3: 30 55% 64%;
+    --chart-4: 5 55% 48%;
+    --chart-5: 155 10% 40%;
+    --radius: 0.5rem;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+  body {
+    @apply bg-background text-foreground;
+    font-family: 'IBM Plex Sans', sans-serif;
+  }
+  h1, h2, h3, h4, h5, h6 {
+    font-family: 'Work Sans', sans-serif;
+  }
+}
+
+@layer base {
+  [data-debug-wrapper="true"] {
+    display: contents !important;
+  }
+}
+
+/* Custom scrollbar */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: #FCFBF8;
+}
+::-webkit-scrollbar-thumb {
+  background: #EAE6DD;
+  border-radius: 3px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #D4A373;
+}
+
+/* Data table mono font */
+.font-tabular {
+  font-family: 'IBM Plex Mono', monospace;
+  font-variant-numeric: tabular-nums;
+}

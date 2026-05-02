@@ -1,0 +1,47 @@
+{
+  "summary": "Iteration 2 regression focused on the 5 new items: (1) period-format time parsing (5.2 -> 5:20, 18.32 -> 18:32), (2) Masjid CRUD with new fields (imam, muaddin, committee_members, remark, mihrab_masjid_id), (3) Waqth Chart Detail page, (4) Export CSV/Excel/PDF as real downloadable binaries, (5) CORS Content-Disposition exposure. Backend: 26/26 pytest cases pass (16 legacy + 10 new). Frontend: full Playwright run passed 8/8 steps including 3 browser downloads.",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "/api/generate-salah", "issue": "parse_time_str treats 1-digit fraction (5.2) as 5:20, which is the intended behaviour, but 3-digit fraction where hour>=1 (e.g. 5.123) takes only first 2 chars of min_part ('12') silently. Consider validating minute range more strictly."},
+      {"endpoint": "/api/export/*", "issue": "Export endpoints auth the caller but accept raw client-supplied 'data'; they are effectively a format-conversion service. Document this or validate payload shape/size to avoid abuse."},
+      {"endpoint": "/api/waqth-charts", "issue": "No server-side validation that uploaded/manual prayer_times rows contain the required prayer keys; malformed rows silently produce empty azan fields downstream."}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "WaqthChartDetail", "issues": ["Table shows raw uploaded values unchanged (e.g. '5.2', '18.32'); consider also showing the normalised HH:MM preview beside it so the user can verify interpretation before generating."]},
+      {"screen": "MasjidDetail - Exports", "issues": ["Download filename uses spaces (e.g. 'Masjid Al-Rahman_salah_times.csv'); consider slugifying masjid name to avoid OS/browser issues."]},
+      {"screen": "LoginPage avatar", "issues": ["via.placeholder.com still returns ERR_CONNECTION_CLOSED in sandboxed networks - flagged in iteration_1, not yet replaced."]}
+    ]
+  },
+  "test_report_links": [
+    "/app/backend/tests/backend_test.py",
+    "/app/backend/tests/test_new_features.py",
+    "/app/test_reports/pytest/pytest_results_iter2.xml"
+  ],
+  "action_items": [
+    "Optional: slugify masjid_name before using it in export Content-Disposition filename (replace spaces with _ or -).",
+    "Optional: replace via.placeholder.com avatar with local SVG/initials fallback.",
+    "Optional: in WaqthChartDetail, render an auxiliary column showing the parsed HH:MM so users can preview how '5.2'/'18.32' will be interpreted.",
+    "Optional: validate waqth_chart_id ownership and required prayer columns on chart create/upload."
+  ],
+  "critical_code_review_comments": [
+    "server.py now 642 lines with all logic in one file; splitting into routers/ (auth, masjids, charts, salah, exports) and services/ (time_parser, salah_engine, export_builders) is strongly recommended.",
+    "parse_time_str: '5.2' returning 5:20 works but silently caps any minute>=60 to 59; better to reject or raise a validation warning.",
+    "generate_salah: prayer-key lookup still only tries row.get(prayer, row.get(prayer.capitalize())); uppercase keys ('FAJR') from Excel uploads will still be missed (flagged in iter1, unchanged).",
+    "MasjidCreate is reused for both POST and PUT; a partial UpdateMasjid model would be cleaner so an edit with missing fields doesn't overwrite existing data with defaults (currently PUT always sets every field)."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_new_features.py"
+  ],
+  "success_rate": {"backend": "100%", "frontend": "100%"},
+  "test_credentials": "Bearer test_session_salah_123 for user_id test-user-salah; seed masjid_14b6ab69c3f2, period chart chart_343475f69d4a, salah_config chart_number=2.",
+  "seed_data_creation": "No new persistent seed created. Ephemeral records (TEST_NewFields_Masjid, TEST_NoNewFields, TEST_Masjid_Auto, TEST_Chart_Auto) are created and deleted inside tests. Masjid edits done via UI test were reverted post-run.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "All 26 pytest cases pass. Period-format parsing (5.2 -> 5:20, 18.32 -> 18:32) verified both unit-level via generate-salah response and end-to-end via UI. Export downloads work in browser (verified with page.expect_download). Content-Disposition is exposed in CORS expose_headers. New masjid fields round-trip correctly on POST/PUT/GET. Use fixture _seed_period_config when adding more tests that depend on chart_number=2 config.",
+  "rca of the issue": "N/A - no blocking issues. The single initial pytest failure was a test-isolation problem (backend_test.py::test_create_config_upsert overwrites chart_number=2 config to point at a different chart); fixed by adding a _seed_period_config fixture in test_new_features.py that re-establishes the period chart config before running period-format assertions."
+}
