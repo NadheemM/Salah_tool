@@ -17,6 +17,7 @@ import json
 import math
 import re
 
+import bcrypt
 import openpyxl
 import xlsxwriter
 from reportlab.lib import colors
@@ -114,60 +115,73 @@ async def get_current_user(request: Request):
 
 # ============ AUTH ENDPOINTS ============
 
-@api_router.post("/auth/session")
-async def exchange_session(request: Request, response: Response):
-    body = await request.json()
-    session_id = body.get("session_id")
-    if not session_id:
-        raise HTTPException(status_code=400, detail="session_id required")
-    
-    async with httpx.AsyncClient() as client_http:
-        resp = await client_http.get(
-            "https://demobackend.emergentagent.com/auth/v1/env/oauth/session-data",
-            headers={"X-Session-ID": session_id}
-        )
-    if resp.status_code != 200:
-        raise HTTPException(status_code=401, detail="Invalid session_id")
-    
-    data = resp.json()
-    email = data["email"]
-    name = data["name"]
-    picture = data.get("picture", "")
-    session_token = data["session_token"]
-    
-    existing_user = await db.users.find_one({"email": email}, {"_id": 0})
-    if existing_user:
-        user_id = existing_user["user_id"]
-        await db.users.update_one({"email": email}, {"$set": {"name": name, "picture": picture}})
-    else:
-        user_id = f"user_{uuid.uuid4().hex[:12]}"
-        await db.users.insert_one({
-            "user_id": user_id,
-            "email": email,
-            "name": name,
-            "picture": picture,
-            "created_at": datetime.now(timezone.utc).isoformat()
-        })
-    
-    await db.user_sessions.insert_one({
-        "user_id": user_id,
-        "session_token": session_token,
-        "expires_at": (datetime.now(timezone.utc) + timedelta(days=7)).isoformat(),
-        "created_at": datetime.now(timezone.utc).isoformat()
-    })
-    
+def _set_session_cookie(response: Response, token: str):
     response.set_cookie(
         key="session_token",
-        value=session_token,
+        value=token,
         httponly=True,
         secure=True,
         samesite="none",
         path="/",
         max_age=7*24*60*60
     )
-    
-    user_doc = await db.users.find_one({"user_id": user_id}, {"_id": 0})
+
+async def _create_session(user_id: str, response: Response):
+    session_token = uuid.uuid4().hex
+    await db.user_sessions.insert_one({
+        "user_id": user_id,
+        "session_token": session_token,
+        "expires_at": (datetime.now(timezone.utc) + timedelta(days=7)).isoformat(),
+        "created_at": datetime.now(timezone.utc).isoformat()
+    })
+    _set_session_cookie(response, session_token)
+    return session_token
+
+@api_router.post("/auth/register")
+async def register(request: Request, response: Response):
+    body = await request.json()
+    email = body.get("email", "").strip().lower()
+    password = body.get("password", "")
+    name = body.get("name", "").strip()
+
+    if not email or not password or not name:
+        raise HTTPException(status_code=400, detail="Name, email and password are required")
+    if len(password) < 6:
+        raise HTTPException(status_code=400, detail="Password must be at least 6 characters")
+
+    existing = await db.users.find_one({"email": email})
+    if existing:
+        raise HTTPException(status_code=400, detail="Email already registered")
+
+    password_hash = bcrypt.hashpw(password.encode("utf-8"), bcrypt.gensalt()).decode("utf-8")
+    user_id = f"user_{uuid.uuid4().hex[:12]}"
+    await db.users.insert_one({
+        "user_id": user_id,
+        "email": email,
+        "name": name,
+        "password_hash": password_hash,
+        "created_at": datetime.now(timezone.utc).isoformat()
+    })
+
+    await _create_session(user_id, response)
+    user_doc = await db.users.find_one({"user_id": user_id}, {"_id": 0, "password_hash": 0})
     return user_doc
+
+@api_router.post("/auth/login")
+async def login(request: Request, response: Response):
+    body = await request.json()
+    email = body.get("email", "").strip().lower()
+    password = body.get("password", "")
+
+    if not email or not password:
+        raise HTTPException(status_code=400, detail="Email and password are required")
+
+    user_doc = await db.users.find_one({"email": email})
+    if not user_doc or not bcrypt.checkpw(password.encode("utf-8"), user_doc["password_hash"].encode("utf-8")):
+        raise HTTPException(status_code=401, detail="Invalid email or password")
+
+    await _create_session(user_doc["user_id"], response)
+    return {k: v for k, v in user_doc.items() if k not in ("_id", "password_hash")}
 
 @api_router.get("/auth/me")
 async def get_me(request: Request):

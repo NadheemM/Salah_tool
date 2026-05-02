@@ -3,7 +3,6 @@ import "@/App.css";
 import { BrowserRouter, Routes, Route, Navigate, useLocation, useNavigate } from "react-router-dom";
 import axios from "axios";
 import LoginPage from "@/pages/LoginPage";
-import AuthCallback from "@/pages/AuthCallback";
 import Dashboard from "@/pages/Dashboard";
 import MasjidList from "@/pages/MasjidList";
 import AddMasjid from "@/pages/AddMasjid";
@@ -39,12 +38,6 @@ function AuthProvider({ children }) {
   }, []);
 
   useEffect(() => {
-    // CRITICAL: If returning from OAuth callback, skip the /me check.
-    // AuthCallback will exchange the session_id and establish the session first.
-    if (window.location.hash?.includes('session_id=')) {
-      setLoading(false);
-      return;
-    }
     checkAuth();
   }, [checkAuth]);
 
@@ -109,14 +102,6 @@ function AppLayout({ children }) {
 }
 
 function AppRouter() {
-  const location = useLocation();
-
-  // REMINDER: DO NOT HARDCODE THE URL, OR ADD ANY FALLBACKS OR REDIRECT URLS, THIS BREAKS THE AUTH
-  // Check URL fragment for session_id synchronously during render
-  if (location.hash?.includes('session_id=')) {
-    return <AuthCallback />;
-  }
-
   return (
     <Routes>
       <Route path="/login" element={<LoginPage />} />
