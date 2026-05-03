@@ -151,17 +151,22 @@ async def register(request: Request, response: Response):
 
     existing = await db.users.find_one({"email": email})
     if existing:
-        raise HTTPException(status_code=400, detail="Email already registered")
-
-    password_hash = bcrypt.hashpw(password.encode("utf-8"), bcrypt.gensalt()).decode("utf-8")
-    user_id = f"user_{uuid.uuid4().hex[:12]}"
-    await db.users.insert_one({
-        "user_id": user_id,
-        "email": email,
-        "name": name,
-        "password_hash": password_hash,
-        "created_at": datetime.now(timezone.utc).isoformat()
-    })
+        if existing.get("password_hash"):
+            raise HTTPException(status_code=400, detail="Email already registered")
+        # Old Google OAuth account — add password and preserve all data
+        password_hash = bcrypt.hashpw(password.encode("utf-8"), bcrypt.gensalt()).decode("utf-8")
+        await db.users.update_one({"email": email}, {"$set": {"password_hash": password_hash}})
+        user_id = existing["user_id"]
+    else:
+        password_hash = bcrypt.hashpw(password.encode("utf-8"), bcrypt.gensalt()).decode("utf-8")
+        user_id = f"user_{uuid.uuid4().hex[:12]}"
+        await db.users.insert_one({
+            "user_id": user_id,
+            "email": email,
+            "name": name,
+            "password_hash": password_hash,
+            "created_at": datetime.now(timezone.utc).isoformat()
+        })
 
     await _create_session(user_id, response)
     user_doc = await db.users.find_one({"user_id": user_id}, {"_id": 0, "password_hash": 0})
