@@ -27,11 +27,17 @@ function AuthProvider({ children }) {
   const [loading, setLoading] = useState(true);
 
   const checkAuth = useCallback(async () => {
+    const token = localStorage.getItem('session_token');
+    if (token) {
+      axios.defaults.headers.common['Authorization'] = `Bearer ${token}`;
+    }
     try {
       const response = await axios.get(`${API}/auth/me`, { withCredentials: true });
       setUser(response.data);
     } catch {
       setUser(null);
+      localStorage.removeItem('session_token');
+      delete axios.defaults.headers.common['Authorization'];
     } finally {
       setLoading(false);
     }
@@ -46,6 +52,8 @@ function AuthProvider({ children }) {
       await axios.post(`${API}/auth/logout`, {}, { withCredentials: true });
     } catch {}
     setUser(null);
+    localStorage.removeItem('session_token');
+    delete axios.defaults.headers.common['Authorization'];
   };
 
   return (

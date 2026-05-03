@@ -34,7 +34,12 @@ export default function LoginPage() {
         ? { email, password }
         : { name, email, password };
       const res = await axios.post(`${API}${endpoint}`, payload, { withCredentials: true });
-      setUser(res.data);
+      const { session_token, ...userData } = res.data;
+      if (session_token) {
+        localStorage.setItem('session_token', session_token);
+        axios.defaults.headers.common['Authorization'] = `Bearer ${session_token}`;
+      }
+      setUser(userData);
       navigate("/dashboard", { replace: true });
     } catch (err) {
       toast.error(err.response?.data?.detail || "Something went wrong");

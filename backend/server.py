@@ -168,9 +168,9 @@ async def register(request: Request, response: Response):
             "created_at": datetime.now(timezone.utc).isoformat()
         })
 
-    await _create_session(user_id, response)
+    token = await _create_session(user_id, response)
     user_doc = await db.users.find_one({"user_id": user_id}, {"_id": 0, "password_hash": 0})
-    return user_doc
+    return {**user_doc, "session_token": token}
 
 @api_router.post("/auth/login")
 async def login(request: Request, response: Response):
@@ -185,8 +185,9 @@ async def login(request: Request, response: Response):
     if not user_doc or not bcrypt.checkpw(password.encode("utf-8"), user_doc["password_hash"].encode("utf-8")):
         raise HTTPException(status_code=401, detail="Invalid email or password")
 
-    await _create_session(user_doc["user_id"], response)
-    return {k: v for k, v in user_doc.items() if k not in ("_id", "password_hash")}
+    token = await _create_session(user_doc["user_id"], response)
+    result = {k: v for k, v in user_doc.items() if k not in ("_id", "password_hash")}
+    return {**result, "session_token": token}
 
 @api_router.get("/auth/me")
 async def get_me(request: Request):
