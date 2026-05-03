@@ -94,6 +94,7 @@ async def get_current_user(request: Request):
         if auth_header and auth_header.startswith("Bearer "):
             session_token = auth_header.split(" ")[1]
     if not session_token:
+        logger.warning(f"No session token in cookie or Authorization header for {request.url.path}")
         raise HTTPException(status_code=401, detail="Not authenticated")
     
     session_doc = await db.user_sessions.find_one({"session_token": session_token}, {"_id": 0})
@@ -182,7 +183,12 @@ async def login(request: Request, response: Response):
         raise HTTPException(status_code=400, detail="Email and password are required")
 
     user_doc = await db.users.find_one({"email": email})
-    if not user_doc or not bcrypt.checkpw(password.encode("utf-8"), user_doc["password_hash"].encode("utf-8")):
+    if not user_doc:
+        raise HTTPException(status_code=401, detail="Invalid email or password")
+    password_hash = user_doc.get("password_hash")
+    if not password_hash:
+        raise HTTPException(status_code=401, detail="No password set. Use the Register tab to set a password for this account.")
+    if not bcrypt.checkpw(password.encode("utf-8"), password_hash.encode("utf-8")):
         raise HTTPException(status_code=401, detail="Invalid email or password")
 
     token = await _create_session(user_doc["user_id"], response)
@@ -197,6 +203,10 @@ async def get_me(request: Request):
 @api_router.post("/auth/logout")
 async def logout(request: Request, response: Response):
     session_token = request.cookies.get("session_token")
+    if not session_token:
+        auth_header = request.headers.get("Authorization")
+        if auth_header and auth_header.startswith("Bearer "):
+            session_token = auth_header.split(" ")[1]
     if session_token:
         await db.user_sessions.delete_one({"session_token": session_token})
     response.delete_cookie("session_token", path="/", secure=True, samesite="none")
