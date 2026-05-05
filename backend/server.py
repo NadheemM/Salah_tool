@@ -659,12 +659,8 @@ async def generate_salah(data: GenerateSalahRequest, request: Request):
             gen_row["jummah_iqamah"] = ""
         
         generated.append(gen_row)
-
-    # Only include prayers that have at least one non-empty azan value
-    all_prayers = PRAYERS + ["jummah"]
-    active_prayers = [p for p in all_prayers if any(row.get(f"{p}_azan") for row in generated)]
-
-    return {"generated": generated, "config": config, "active_prayers": active_prayers}
+    
+    return {"generated": generated, "config": config}
 
 # ============ EXPORT ENDPOINTS ============
 
