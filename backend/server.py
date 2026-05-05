@@ -609,7 +609,16 @@ async def generate_salah(data: GenerateSalahRequest, request: Request):
     for row in prayer_times:
         # Normalize all keys to lowercase for lookup
         row_lower = {k.lower().strip(): v for k, v in row.items()}
-        gen_row = {"date": row_lower.get("date", "")}
+        date_val = row_lower.get("date", "")
+        if not date_val:
+            month_val = row_lower.get("month", "")
+            day_val = row_lower.get("day", "")
+            if month_val and day_val:
+                try:
+                    date_val = f"{int(float(month_val))}/{int(float(day_val))}"
+                except (ValueError, TypeError):
+                    date_val = f"{month_val}/{day_val}"
+        gen_row = {"date": date_val}
         for prayer in PRAYERS:
             prayer_adj = adjustments.get(prayer, {})
             mode = prayer_adj.get("mode", "adjustment")  # "adjustment" or "fixed"
