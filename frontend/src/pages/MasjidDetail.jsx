@@ -24,6 +24,7 @@ export default function MasjidDetail() {
   const [generatedData, setGeneratedData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [lastSaved, setLastSaved] = useState({});
   const [generating, setGenerating] = useState(false);
   const [editing, setEditing] = useState(false);
   const [editForm, setEditForm] = useState({});
@@ -172,6 +173,7 @@ export default function MasjidDetail() {
         waqth_chart_id: cfg.waqth_chart_id,
         adjustments: cfg.adjustments
       }, { withCredentials: true });
+      setLastSaved(prev => ({ ...prev, [chartNum]: new Date() }));
       toast.success(`Chart ${chartNum} configuration saved`);
     } catch (err) {
       toast.error("Failed to save configuration");
@@ -672,7 +674,7 @@ export default function MasjidDetail() {
               </div>
 
               {/* Actions */}
-              <div className="flex flex-wrap gap-3">
+              <div className="flex flex-wrap items-center gap-3">
                 <button
                   data-testid={`save-config-${num}`}
                   onClick={() => handleSaveConfig(num)}
@@ -690,6 +692,11 @@ export default function MasjidDetail() {
                 >
                   {generating ? "Generating..." : "Generate Salah Times"}
                 </button>
+                {lastSaved[num] && (
+                  <span className="text-xs text-[#5C6B64]">
+                    Last saved: {lastSaved[num].toLocaleDateString()} {lastSaved[num].toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                  </span>
+                )}
               </div>
             </div>
           </TabsContent>
