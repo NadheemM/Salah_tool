@@ -76,6 +76,12 @@ export default function MasjidDetail() {
     } catch {}
   };
 
+  // Only show prayers that have at least one non-empty azan in the generated data
+  const displayPrayers = useMemo(() => {
+    if (!generatedData || generatedData.length === 0) return ALL_DISPLAY_PRAYERS;
+    return ALL_DISPLAY_PRAYERS.filter(p => generatedData.some(row => row[`${p}_azan`]));
+  }, [generatedData]);
+
   // Filtered generated data
   const filteredData = useMemo(() => {
     if (!generatedData) return [];
@@ -195,12 +201,23 @@ export default function MasjidDetail() {
       return;
     }
     try {
+      const exportData = generatedData.map(row => {
+        const filtered = { date: row.date };
+        displayPrayers.forEach(p => {
+          filtered[`${p}_azan`] = row[`${p}_azan`] || "";
+          filtered[`${p}_iqamah`] = row[`${p}_iqamah`] || "";
+        });
+        return filtered;
+      });
+      const token = localStorage.getItem('session_token');
+      const headers = { 'Content-Type': 'application/json' };
+      if (token) headers['Authorization'] = `Bearer ${token}`;
       const response = await fetch(`${API}/export/${format}`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers,
         credentials: 'include',
         body: JSON.stringify({
-          data: generatedData,
+          data: exportData,
           masjid_name: masjid?.name || "salah_times"
         })
       });
@@ -716,7 +733,7 @@ export default function MasjidDetail() {
               <div key={idx} className="surface-card rounded-lg p-3">
                 <p className="text-xs font-semibold text-[#2B5336] mb-2">Date: {row.date}</p>
                 <div className="grid grid-cols-2 gap-2 text-xs">
-                  {ALL_DISPLAY_PRAYERS.map(p => (
+                  {displayPrayers.map(p => (
                     <div key={p}>
                       <span className="text-[#5C6B64] block">{PRAYER_LABELS[p]}</span>
                       <div className="font-tabular text-[#1E2522]">
@@ -737,7 +754,7 @@ export default function MasjidDetail() {
               <TableHeader>
                 <TableRow className="bg-[#2B5336]">
                   <TableHead className="text-white text-xs font-medium">Date</TableHead>
-                  {ALL_DISPLAY_PRAYERS.map(p => (
+                  {displayPrayers.map(p => (
                     <TableHead key={p} className="text-white text-xs font-medium text-center">
                       {PRAYER_LABELS[p]}
                       <div className="text-[10px] font-normal opacity-80">Azan / Iqamah</div>
@@ -749,7 +766,7 @@ export default function MasjidDetail() {
                 {filteredData.map((row, idx) => (
                   <TableRow key={idx} className={idx % 2 === 0 ? "bg-white" : "bg-[#FCFBF8]"}>
                     <TableCell className="text-xs font-medium text-[#1E2522]">{row.date}</TableCell>
-                    {ALL_DISPLAY_PRAYERS.map(p => (
+                    {displayPrayers.map(p => (
                       <TableCell key={p} className="text-center font-tabular text-xs">
                         <span className="text-[#1E2522]">{row[`${p}_azan`] || "-"}</span>
                         <span className="text-[#C27A62] ml-1">/ {row[`${p}_iqamah`] || "-"}</span>

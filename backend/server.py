@@ -541,6 +541,13 @@ def add_minutes_to_time(time_str, minutes):
 
 PRAYERS = ["fajr", "sunrise", "zuhr", "asr", "maghrib", "isha"]
 
+MONTH_NAMES = {
+    "january": 1, "february": 2, "march": 3, "april": 4, "may": 5, "june": 6,
+    "july": 7, "august": 8, "september": 9, "october": 10, "november": 11, "december": 12,
+    "jan": 1, "feb": 2, "mar": 3, "apr": 4, "jun": 6, "jul": 7,
+    "aug": 8, "sep": 9, "oct": 10, "nov": 11, "dec": 12,
+}
+
 # Common aliases for prayer column names in uploaded charts
 PRAYER_ALIASES = {
     "fajr": ["fajr", "fajar", "fajir", "subh", "subuh", "fjar", "fazr"],
@@ -609,7 +616,24 @@ async def generate_salah(data: GenerateSalahRequest, request: Request):
     for row in prayer_times:
         # Normalize all keys to lowercase for lookup
         row_lower = {k.lower().strip(): v for k, v in row.items()}
-        gen_row = {"date": row_lower.get("date", "")}
+        date_val = row_lower.get("date", "")
+        if not date_val:
+            month_val = str(row_lower.get("month", "")).strip()
+            day_val = str(row_lower.get("day", "")).strip()
+            if month_val and day_val:
+                try:
+                    month_num = int(float(month_val))
+                except (ValueError, TypeError):
+                    month_num = MONTH_NAMES.get(month_val.lower(), 0)
+                try:
+                    day_num = int(float(day_val))
+                except (ValueError, TypeError):
+                    day_num = 0
+                if month_num and day_num:
+                    date_val = f"{day_num}/{month_num}"
+                else:
+                    date_val = f"{day_val}/{month_val}"
+        gen_row = {"date": date_val}
         for prayer in PRAYERS:
             prayer_adj = adjustments.get(prayer, {})
             mode = prayer_adj.get("mode", "adjustment")  # "adjustment" or "fixed"
@@ -650,8 +674,12 @@ async def generate_salah(data: GenerateSalahRequest, request: Request):
             gen_row["jummah_iqamah"] = ""
         
         generated.append(gen_row)
-    
-    return {"generated": generated, "config": config}
+
+    # Only include prayers that have at least one non-empty azan value
+    all_prayers = PRAYERS + ["jummah"]
+    active_prayers = [p for p in all_prayers if any(row.get(f"{p}_azan") for row in generated)]
+
+    return {"generated": generated, "config": config, "active_prayers": active_prayers}
 
 # ============ EXPORT ENDPOINTS ============
 
