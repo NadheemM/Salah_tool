@@ -10,6 +10,7 @@ import { Switch } from "@/components/ui/switch";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { toast } from "sonner";
 import { ArrowLeft, Save, Download, FileText, FileSpreadsheet, Pencil, X, Check, Plus, Trash2, Search } from "lucide-react";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 
 const PRAYERS = ["fajr", "sunrise", "zuhr", "asr", "maghrib", "isha"];
 const PRAYER_LABELS = { fajr: "Fajr", sunrise: "Sunrise", zuhr: "Zuhr", asr: "Asr", maghrib: "Maghrib", isha: "Isha", jummah: "Jummah" };
@@ -25,6 +26,7 @@ export default function MasjidDetail() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [lastSaved, setLastSaved] = useState({});
+  const [confirmGenerate, setConfirmGenerate] = useState(null);
   const [generating, setGenerating] = useState(false);
   const [editing, setEditing] = useState(false);
   const [editForm, setEditForm] = useState({});
@@ -686,7 +688,7 @@ export default function MasjidDetail() {
                 </button>
                 <button
                   data-testid={`generate-salah-${num}`}
-                  onClick={() => handleGenerate(num)}
+                  onClick={() => setConfirmGenerate(num)}
                   disabled={generating}
                   className="flex items-center gap-2 px-4 py-2 bg-[#C27A62] text-white rounded-lg hover:bg-[#A86550] transition-colors text-sm font-medium disabled:opacity-50"
                 >
@@ -803,6 +805,34 @@ export default function MasjidDetail() {
           </div>
         </div>
       )}
+
+      {/* Generate Confirmation Dialog */}
+      <Dialog open={confirmGenerate !== null} onOpenChange={() => setConfirmGenerate(null)}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle className="text-[#1E2522]" style={{ fontFamily: 'Work Sans' }}>
+              Confirm Generation
+            </DialogTitle>
+          </DialogHeader>
+          <p className="text-sm text-[#5C6B64]">
+            You are about to generate salah times based on the current saved configuration. Please ensure the configuration has been saved before proceeding.
+          </p>
+          <DialogFooter className="gap-2 sm:gap-0">
+            <button
+              onClick={() => setConfirmGenerate(null)}
+              className="px-4 py-2 text-sm border border-[#EAE6DD] rounded-lg hover:bg-[#EAE6DD]/50 text-[#1E2522]"
+            >
+              Cancel
+            </button>
+            <button
+              onClick={() => { handleGenerate(confirmGenerate); setConfirmGenerate(null); }}
+              className="px-4 py-2 text-sm bg-[#C27A62] text-white rounded-lg hover:bg-[#A86550] font-medium"
+            >
+              Yes, Generate
+            </button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
