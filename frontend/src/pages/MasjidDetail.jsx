@@ -104,6 +104,7 @@ export default function MasjidDetail() {
       muaddin_number: masjid.muaddin_number || "",
       committee_members: masjid.committee_members || [],
       remark: masjid.remark || "",
+      source: masjid.source || "",
       mihrab_masjid_id: masjid.mihrab_masjid_id || "",
     });
     setEditing(true);
@@ -351,6 +352,16 @@ export default function MasjidDetail() {
                 placeholder="Any additional remarks..."
               />
             </div>
+            <div className="space-y-2 sm:col-span-2">
+              <Label className="text-xs text-[#5C6B64]">Source</Label>
+              <Input
+                data-testid="edit-source"
+                value={editForm.source}
+                onChange={e => setEditForm(p => ({...p, source: e.target.value}))}
+                className="bg-white border-[#EAE6DD]"
+                placeholder="e.g. Mihrab, JAKIM..."
+              />
+            </div>
           </div>
 
           {/* Committee Members */}
@@ -468,6 +479,12 @@ export default function MasjidDetail() {
               <div className="sm:col-span-2 lg:col-span-3">
                 <span className="text-xs text-[#5C6B64] uppercase tracking-wider">Remark</span>
                 <p className="text-[#1E2522]">{masjid.remark}</p>
+              </div>
+            )}
+            {masjid.source && (
+              <div className="sm:col-span-2 lg:col-span-3">
+                <span className="text-xs text-[#5C6B64] uppercase tracking-wider">Source</span>
+                <p className="text-[#1E2522]">{masjid.source}</p>
               </div>
             )}
           </div>

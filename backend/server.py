@@ -64,6 +64,7 @@ class MasjidCreate(BaseModel):
     muaddin_number: Optional[str] = ""
     committee_members: Optional[List[Any]] = []
     remark: Optional[str] = ""
+    source: Optional[str] = ""
     mihrab_masjid_id: Optional[str] = ""
 
 class WaqthChartCreate(BaseModel):
@@ -233,6 +234,7 @@ async def create_masjid(data: MasjidCreate, request: Request):
         "muaddin_number": data.muaddin_number,
         "committee_members": data.committee_members,
         "remark": data.remark,
+        "source": data.source,
         "mihrab_masjid_id": data.mihrab_masjid_id,
         "user_id": user["user_id"],
         "created_at": datetime.now(timezone.utc).isoformat()
@@ -279,6 +281,7 @@ async def update_masjid(masjid_id: str, data: MasjidCreate, request: Request):
             "muaddin_number": data.muaddin_number,
             "committee_members": data.committee_members,
             "remark": data.remark,
+            "source": data.source,
             "mihrab_masjid_id": data.mihrab_masjid_id,
         }}
     )
