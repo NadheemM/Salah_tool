@@ -13,6 +13,7 @@ export default function MasjidList() {
   const [searchTerm, setSearchTerm] = useState("");
   const [districtFilter, setDistrictFilter] = useState("");
   const [stateFilter, setStateFilter] = useState("");
+  const [sourceFilter, setSourceFilter] = useState("");
   const navigate = useNavigate();
 
   const fetchMasjids = async (search = "") => {
@@ -40,14 +41,17 @@ export default function MasjidList() {
     [...new Set(masjids.map(m => m.district).filter(Boolean))].sort(), [masjids]);
   const uniqueStates = useMemo(() =>
     [...new Set(masjids.map(m => m.state).filter(Boolean))].sort(), [masjids]);
+  const uniqueSources = useMemo(() =>
+    [...new Set(masjids.map(m => m.source).filter(Boolean))].sort(), [masjids]);
 
   const displayedMasjids = useMemo(() => masjids.filter(m => {
     if (districtFilter && m.district !== districtFilter) return false;
     if (stateFilter && m.state !== stateFilter) return false;
+    if (sourceFilter && m.source !== sourceFilter) return false;
     return true;
-  }), [masjids, districtFilter, stateFilter]);
+  }), [masjids, districtFilter, stateFilter, sourceFilter]);
 
-  const hasActiveFilters = districtFilter || stateFilter;
+  const hasActiveFilters = districtFilter || stateFilter || sourceFilter;
 
   const handleDelete = async (e, masjidId) => {
     e.stopPropagation();
@@ -93,7 +97,7 @@ export default function MasjidList() {
           data-testid="masjid-search-input"
           value={searchTerm}
           onChange={(e) => setSearchTerm(e.target.value)}
-          placeholder="Search by name or Mihrab ID..."
+          placeholder="Search by name, ID (M001), or source..."
           className="pl-10 bg-white border-[#EAE6DD]"
         />
       </div>
@@ -123,9 +127,20 @@ export default function MasjidList() {
             ))}
           </SelectContent>
         </Select>
+        <Select value={sourceFilter || "__all__"} onValueChange={v => setSourceFilter(v === "__all__" ? "" : v)}>
+          <SelectTrigger className="h-8 text-xs bg-white border-[#EAE6DD] w-40">
+            <SelectValue placeholder="All Sources" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="__all__">All Sources</SelectItem>
+            {uniqueSources.map(s => (
+              <SelectItem key={s} value={s}>{s}</SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
         {hasActiveFilters && (
           <button
-            onClick={() => { setDistrictFilter(""); setStateFilter(""); }}
+            onClick={() => { setDistrictFilter(""); setStateFilter(""); setSourceFilter(""); }}
             className="flex items-center gap-1 px-2 py-1 text-xs text-[#B24C41] hover:bg-red-50 rounded transition-colors"
           >
             <X className="w-3 h-3" /> Clear filters
@@ -160,21 +175,25 @@ export default function MasjidList() {
                   <Building2 className="w-5 h-5 text-[#2B5336]" />
                 </div>
                 <div className="min-w-0">
-                  <p className="text-sm font-medium text-[#1E2522] truncate">{masjid.name}</p>
+                  <div className="flex items-center gap-2">
+                    {masjid.serial_no && (
+                      <span className="text-xs font-mono font-semibold text-white bg-[#2B5336] px-1.5 py-0.5 rounded flex-shrink-0">
+                        M{String(masjid.serial_no).padStart(3, '0')}
+                      </span>
+                    )}
+                    <p className="text-sm font-medium text-[#1E2522] truncate">{masjid.name}</p>
+                  </div>
                   <div className="flex items-center gap-2 mt-0.5 flex-wrap">
                     {(masjid.district || masjid.state) && (
                       <span className="text-xs text-[#5C6B64]">
                         {[masjid.district, masjid.state].filter(Boolean).join(", ")}
                       </span>
                     )}
-                    {masjid.location_link && (
-                      <span className="flex items-center gap-1 text-xs text-[#5C6B64]">
-                        <MapPin className="w-3 h-3" />
-                        <span className="truncate max-w-[150px]">{masjid.location_link}</span>
-                      </span>
+                    {masjid.source && (
+                      <span className="text-xs text-[#C27A62]">Source: {masjid.source}</span>
                     )}
                     {masjid.mihrab_masjid_id && (
-                      <span className="text-xs text-[#5C6B64]">ID: {masjid.mihrab_masjid_id}</span>
+                      <span className="text-xs text-[#5C6B64]">Mihrab: {masjid.mihrab_masjid_id}</span>
                     )}
                   </div>
                 </div>

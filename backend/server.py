@@ -219,8 +219,10 @@ async def logout(request: Request, response: Response):
 async def create_masjid(data: MasjidCreate, request: Request):
     user = await get_current_user(request)
     masjid_id = f"masjid_{uuid.uuid4().hex[:12]}"
+    serial_no = await db.masjids.count_documents({"user_id": user["user_id"]}) + 1
     doc = {
         "masjid_id": masjid_id,
+        "serial_no": serial_no,
         "name": data.name,
         "location_link": data.location_link,
         "waqth_chart_id": data.waqth_chart_id,
@@ -247,10 +249,18 @@ async def list_masjids(request: Request, search: Optional[str] = None):
     user = await get_current_user(request)
     query = {"user_id": user["user_id"]}
     if search:
-        query["$or"] = [
+        search_conditions = [
             {"name": {"$regex": search, "$options": "i"}},
             {"mihrab_masjid_id": {"$regex": search, "$options": "i"}},
+            {"source": {"$regex": search, "$options": "i"}},
         ]
+        try:
+            serial_search = int(search.lstrip("Mm").lstrip("0") or "0")
+            if serial_search > 0:
+                search_conditions.append({"serial_no": serial_search})
+        except ValueError:
+            pass
+        query["$or"] = search_conditions
     masjids = await db.masjids.find(query, {"_id": 0}).to_list(1000)
     return masjids
 

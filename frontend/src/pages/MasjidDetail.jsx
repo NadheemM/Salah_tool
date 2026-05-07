@@ -436,9 +436,15 @@ export default function MasjidDetail() {
       )}
 
       {/* Masjid Info Summary (when not editing) */}
-      {!editing && (masjid.imam || masjid.muaddin || masjid.mihrab_masjid_id || masjid.district || masjid.state || masjid.remark || (masjid.committee_members && masjid.committee_members.length > 0)) && (
+      {!editing && (masjid.imam || masjid.muaddin || masjid.mihrab_masjid_id || masjid.district || masjid.state || masjid.remark || masjid.serial_no || (masjid.committee_members && masjid.committee_members.length > 0)) && (
         <div className="surface-card rounded-lg p-5 mb-6">
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 text-sm">
+            {masjid.serial_no && (
+              <div>
+                <span className="text-xs text-[#5C6B64] uppercase tracking-wider">Masjid ID</span>
+                <p className="font-mono font-semibold text-[#2B5336]">M{String(masjid.serial_no).padStart(3, '0')}</p>
+              </div>
+            )}
             {masjid.mihrab_masjid_id && (
               <div><span className="text-xs text-[#5C6B64] uppercase tracking-wider">Mihrab ID</span><p className="font-medium text-[#1E2522]">{masjid.mihrab_masjid_id}</p></div>
             )}
