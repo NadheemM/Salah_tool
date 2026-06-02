@@ -4,6 +4,13 @@ import axios from "axios";
 import { useAuth, API } from "@/App";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogFooter,
+} from "@/components/ui/dialog";
 import { toast } from "sonner";
 
 export default function LoginPage() {
@@ -14,6 +21,9 @@ export default function LoginPage() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [submitting, setSubmitting] = useState(false);
+  const [forgotOpen, setForgotOpen] = useState(false);
+  const [forgotEmail, setForgotEmail] = useState("");
+  const [forgotSubmitting, setForgotSubmitting] = useState(false);
 
   if (loading) {
     return (
@@ -45,6 +55,22 @@ export default function LoginPage() {
       toast.error(err.response?.data?.detail || "Something went wrong");
     } finally {
       setSubmitting(false);
+    }
+  };
+
+  const handleForgotPassword = async (e) => {
+    e.preventDefault();
+    if (!forgotEmail.trim()) { toast.error("Please enter your email address"); return; }
+    setForgotSubmitting(true);
+    try {
+      await axios.post(`${API}/auth/forgot-password`, { email: forgotEmail.trim() }, { withCredentials: true });
+      toast.success("If that email is registered, a reset link has been sent.");
+      setForgotOpen(false);
+      setForgotEmail("");
+    } catch (err) {
+      toast.error(err.response?.data?.detail || "Something went wrong. Please try again.");
+    } finally {
+      setForgotSubmitting(false);
     }
   };
 
@@ -121,6 +147,15 @@ export default function LoginPage() {
                 required
                 className="bg-white border-[#EAE6DD]"
               />
+              {mode === "login" && (
+                <button
+                  type="button"
+                  onClick={() => { setForgotEmail(email); setForgotOpen(true); }}
+                  className="mt-1 text-xs text-[#2B5336] hover:underline focus:outline-none"
+                >
+                  Forgot password?
+                </button>
+              )}
             </div>
             <button
               type="submit"
@@ -132,6 +167,46 @@ export default function LoginPage() {
           </form>
         </div>
       </div>
+
+      <Dialog open={forgotOpen} onOpenChange={setForgotOpen}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle className="text-[#1E2522]">Reset your password</DialogTitle>
+          </DialogHeader>
+          <p className="text-sm text-[#5C6B64]">
+            Enter your account email and we'll send you a reset link.
+          </p>
+          <form onSubmit={handleForgotPassword} className="space-y-4">
+            <div className="space-y-1">
+              <Label className="text-sm font-medium text-[#1E2522]">Email address</Label>
+              <Input
+                type="email"
+                value={forgotEmail}
+                onChange={e => setForgotEmail(e.target.value)}
+                placeholder="you@example.com"
+                required
+                className="bg-white border-[#EAE6DD]"
+              />
+            </div>
+            <DialogFooter className="gap-2 sm:gap-0">
+              <button
+                type="button"
+                onClick={() => setForgotOpen(false)}
+                className="px-4 py-2 text-sm border border-[#EAE6DD] rounded-lg hover:bg-[#EAE6DD]/50 text-[#1E2522]"
+              >
+                Cancel
+              </button>
+              <button
+                type="submit"
+                disabled={forgotSubmitting}
+                className="px-4 py-2 text-sm bg-[#2B5336] text-white rounded-lg hover:bg-[#1E3F20] font-medium disabled:opacity-50"
+              >
+                {forgotSubmitting ? "Sending..." : "Send Reset Link"}
+              </button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

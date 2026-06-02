@@ -3,6 +3,7 @@ import "@/App.css";
 import { BrowserRouter, Routes, Route, Navigate, useLocation, useNavigate } from "react-router-dom";
 import axios from "axios";
 import LoginPage from "@/pages/LoginPage";
+import ResetPasswordPage from "@/pages/ResetPasswordPage";
 import Dashboard from "@/pages/Dashboard";
 import MasjidList from "@/pages/MasjidList";
 import AddMasjid from "@/pages/AddMasjid";
@@ -113,6 +114,7 @@ function AppRouter() {
   return (
     <Routes>
       <Route path="/login" element={<LoginPage />} />
+      <Route path="/reset-password" element={<ResetPasswordPage />} />
       <Route path="/dashboard" element={
         <ProtectedRoute>
           <AppLayout><Dashboard /></AppLayout>

@@ -86,6 +86,13 @@ class GenerateSalahRequest(BaseModel):
     month: Optional[int] = None
     year: Optional[int] = None
 
+class ForgotPasswordRequest(BaseModel):
+    email: str
+
+class ResetPasswordRequest(BaseModel):
+    token: str
+    new_password: str
+
 # ============ AUTH HELPERS ============
 
 async def get_current_user(request: Request):
@@ -138,6 +145,54 @@ async def _create_session(user_id: str, response: Response):
     })
     _set_session_cookie(response, session_token)
     return session_token
+
+async def _send_reset_email(to_email: str, reset_link: str):
+    import aiosmtplib
+    from email.mime.multipart import MIMEMultipart
+    from email.mime.text import MIMEText
+
+    smtp_host = os.environ.get("SMTP_HOST", "smtp.gmail.com")
+    smtp_port = int(os.environ.get("SMTP_PORT", "587"))
+    smtp_user = os.environ.get("SMTP_USER", "")
+    smtp_password = os.environ.get("SMTP_PASSWORD", "")
+
+    subject = "Reset your Salah Time Generator password"
+    text_body = (
+        f"Reset your password here (valid 1 hour):\n\n{reset_link}\n\n"
+        "If you didn't request this, ignore this email."
+    )
+    html_body = f"""<!DOCTYPE html>
+<html><body style="background:#FCFBF8;font-family:Arial,sans-serif;padding:40px 16px;">
+  <table style="max-width:480px;margin:0 auto;background:#fff;border:1px solid #EAE6DD;border-radius:8px;overflow:hidden;">
+    <tr><td style="background:#2B5336;padding:24px 32px;">
+      <p style="margin:0;color:#fff;font-size:20px;font-weight:600;">Salah Time Generator</p>
+    </td></tr>
+    <tr><td style="padding:32px;">
+      <p style="font-size:16px;color:#1E2522;font-weight:600;margin:0 0 12px;">Reset your password</p>
+      <p style="font-size:14px;color:#5C6B64;margin:0 0 24px;">Click below to set a new password. Link expires in <strong>1 hour</strong>.</p>
+      <a href="{reset_link}" style="display:inline-block;padding:12px 28px;background:#2B5336;color:#fff;border-radius:6px;text-decoration:none;font-weight:600;font-size:14px;">Reset Password</a>
+      <p style="margin:24px 0 0;font-size:12px;color:#5C6B64;">Or copy: <a href="{reset_link}" style="color:#2B5336;">{reset_link}</a></p>
+      <hr style="margin:24px 0;border:none;border-top:1px solid #EAE6DD;">
+      <p style="font-size:12px;color:#5C6B64;margin:0;">Didn't request this? Ignore this email — your password won't change.</p>
+    </td></tr>
+  </table>
+</body></html>"""
+
+    msg = MIMEMultipart("alternative")
+    msg["Subject"] = subject
+    msg["From"] = smtp_user
+    msg["To"] = to_email
+    msg.attach(MIMEText(text_body, "plain"))
+    msg.attach(MIMEText(html_body, "html"))
+
+    await aiosmtplib.send(
+        msg,
+        hostname=smtp_host,
+        port=smtp_port,
+        username=smtp_user,
+        password=smtp_password,
+        start_tls=True,
+    )
 
 @api_router.post("/auth/register")
 async def register(request: Request, response: Response):
@@ -212,6 +267,59 @@ async def logout(request: Request, response: Response):
         await db.user_sessions.delete_one({"session_token": session_token})
     response.delete_cookie("session_token", path="/", secure=True, samesite="none")
     return {"message": "Logged out"}
+
+@api_router.post("/auth/forgot-password")
+async def forgot_password(data: ForgotPasswordRequest):
+    email = data.email.strip().lower()
+    if not email:
+        raise HTTPException(status_code=400, detail="Email is required")
+    user_doc = await db.users.find_one({"email": email}, {"_id": 0, "password_hash": 0})
+    if not user_doc:
+        return {"message": "If that email is registered, a reset link has been sent."}
+    await db.password_reset_tokens.update_many(
+        {"user_id": user_doc["user_id"], "used": False}, {"$set": {"used": True}})
+    token = uuid.uuid4().hex
+    expires_at = datetime.now(timezone.utc) + timedelta(hours=1)
+    await db.password_reset_tokens.insert_one({
+        "token": token,
+        "user_id": user_doc["user_id"],
+        "email": email,
+        "expires_at": expires_at.isoformat(),
+        "used": False,
+        "created_at": datetime.now(timezone.utc).isoformat()
+    })
+    frontend_url = os.environ.get("FRONTEND_URL", "http://localhost:3000")
+    reset_link = f"{frontend_url}/reset-password?token={token}"
+    try:
+        await _send_reset_email(email, reset_link)
+    except Exception:
+        logger.error(f"Could not send reset email for {email}")
+    return {"message": "If that email is registered, a reset link has been sent."}
+
+@api_router.post("/auth/reset-password")
+async def reset_password(data: ResetPasswordRequest):
+    token = data.token.strip()
+    if not token or not data.new_password:
+        raise HTTPException(status_code=400, detail="Token and new password are required")
+    if len(data.new_password) < 6:
+        raise HTTPException(status_code=400, detail="Password must be at least 6 characters")
+    token_doc = await db.password_reset_tokens.find_one({"token": token}, {"_id": 0})
+    if not token_doc:
+        raise HTTPException(status_code=400, detail="Invalid or expired reset link")
+    if token_doc.get("used"):
+        raise HTTPException(status_code=400, detail="This reset link has already been used")
+    expires_at = token_doc["expires_at"]
+    if isinstance(expires_at, str):
+        expires_at = datetime.fromisoformat(expires_at)
+    if expires_at.tzinfo is None:
+        expires_at = expires_at.replace(tzinfo=timezone.utc)
+    if expires_at < datetime.now(timezone.utc):
+        raise HTTPException(status_code=400, detail="This reset link has expired. Please request a new one.")
+    password_hash = bcrypt.hashpw(data.new_password.encode("utf-8"), bcrypt.gensalt()).decode("utf-8")
+    await db.users.update_one({"user_id": token_doc["user_id"]}, {"$set": {"password_hash": password_hash}})
+    await db.password_reset_tokens.update_one({"token": token}, {"$set": {"used": True}})
+    await db.user_sessions.delete_many({"user_id": token_doc["user_id"]})
+    return {"message": "Password updated successfully. Please log in with your new password."}
 
 # ============ MASJID ENDPOINTS ============
 
