@@ -18,6 +18,9 @@ import math
 import re
 
 import bcrypt
+import aiosmtplib
+from email.mime.multipart import MIMEMultipart
+from email.mime.text import MIMEText
 import openpyxl
 import xlsxwriter
 from reportlab.lib import colors
@@ -147,10 +150,6 @@ async def _create_session(user_id: str, response: Response):
     return session_token
 
 async def _send_reset_email(to_email: str, reset_link: str):
-    import aiosmtplib
-    from email.mime.multipart import MIMEMultipart
-    from email.mime.text import MIMEText
-
     smtp_host = os.environ.get("SMTP_HOST", "smtp.gmail.com")
     smtp_port = int(os.environ.get("SMTP_PORT", "587"))
     smtp_user = os.environ.get("SMTP_USER", "")
@@ -292,8 +291,8 @@ async def forgot_password(data: ForgotPasswordRequest):
     reset_link = f"{frontend_url}/reset-password?token={token}"
     try:
         await _send_reset_email(email, reset_link)
-    except Exception:
-        logger.error(f"Could not send reset email for {email}")
+    except Exception as e:
+        logger.error(f"Could not send reset email for {email}: {type(e).__name__}: {e}")
     return {"message": "If that email is registered, a reset link has been sent."}
 
 @api_router.post("/auth/reset-password")
