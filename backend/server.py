@@ -18,9 +18,6 @@ import math
 import re
 
 import bcrypt
-import aiosmtplib
-from email.mime.multipart import MIMEMultipart
-from email.mime.text import MIMEText
 import openpyxl
 import xlsxwriter
 from reportlab.lib import colors
@@ -150,10 +147,10 @@ async def _create_session(user_id: str, response: Response):
     return session_token
 
 async def _send_reset_email(to_email: str, reset_link: str):
-    smtp_host = os.environ.get("SMTP_HOST", "smtp.gmail.com")
-    smtp_port = int(os.environ.get("SMTP_PORT", "587"))
-    smtp_user = os.environ.get("SMTP_USER", "")
-    smtp_password = os.environ.get("SMTP_PASSWORD", "")
+    api_key = os.environ.get("BREVO_API_KEY", "")
+    sender_email = os.environ.get("SMTP_USER", "")
+    if not api_key:
+        raise RuntimeError("BREVO_API_KEY is not set")
 
     subject = "Reset your Salah Time Generator password"
     text_body = (
@@ -177,21 +174,25 @@ async def _send_reset_email(to_email: str, reset_link: str):
   </table>
 </body></html>"""
 
-    msg = MIMEMultipart("alternative")
-    msg["Subject"] = subject
-    msg["From"] = smtp_user
-    msg["To"] = to_email
-    msg.attach(MIMEText(text_body, "plain"))
-    msg.attach(MIMEText(html_body, "html"))
-
-    await aiosmtplib.send(
-        msg,
-        hostname=smtp_host,
-        port=smtp_port,
-        username=smtp_user,
-        password=smtp_password,
-        start_tls=True,
-    )
+    payload = {
+        "sender": {"name": "Salah Time Generator", "email": sender_email},
+        "to": [{"email": to_email}],
+        "subject": subject,
+        "htmlContent": html_body,
+        "textContent": text_body,
+    }
+    async with httpx.AsyncClient(timeout=15) as client:
+        resp = await client.post(
+            "https://api.brevo.com/v3/smtp/email",
+            headers={
+                "api-key": api_key,
+                "content-type": "application/json",
+                "accept": "application/json",
+            },
+            json=payload,
+        )
+        if resp.status_code >= 400:
+            raise RuntimeError(f"Brevo API error {resp.status_code}: {resp.text}")
 
 @api_router.post("/auth/register")
 async def register(request: Request, response: Response):
