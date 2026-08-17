@@ -195,6 +195,80 @@ class TestMasjidEditNewFields:
         requests.delete(f"{BASE_URL}/api/masjids/{mid}", headers=HEADERS, timeout=20)
 
 
+# ---------- Masjid serial numbers ----------
+class TestMasjidSerialNumbers:
+    def test_serial_not_reused_after_delete(self):
+        """Deleting a masjid must not let the next one reuse its M0xx serial."""
+        created = []
+        try:
+            for i in range(3):
+                r = requests.post(
+                    f"{BASE_URL}/api/masjids", headers=HEADERS,
+                    json={"name": f"TEST_Serial_{i}"}, timeout=20,
+                )
+                assert r.status_code == 200, r.text
+                created.append(r.json())
+
+            first_serials = [m["serial_no"] for m in created]
+            assert len(set(first_serials)) == 3, f"serials collided: {first_serials}"
+
+            # Drop the middle one, then add another.
+            requests.delete(
+                f"{BASE_URL}/api/masjids/{created[1]['masjid_id']}",
+                headers=HEADERS, timeout=20,
+            )
+            created.pop(1)
+
+            r = requests.post(
+                f"{BASE_URL}/api/masjids", headers=HEADERS,
+                json={"name": "TEST_Serial_after_delete"}, timeout=20,
+            )
+            assert r.status_code == 200, r.text
+            created.append(r.json())
+
+            serials = [m["serial_no"] for m in created]
+            assert len(set(serials)) == len(serials), f"serial reused: {serials}"
+            assert created[-1]["serial_no"] > max(first_serials), (
+                f"new serial {created[-1]['serial_no']} must exceed {max(first_serials)}"
+            )
+        finally:
+            for m in created:
+                requests.delete(
+                    f"{BASE_URL}/api/masjids/{m['masjid_id']}", headers=HEADERS, timeout=20,
+                )
+
+
+# ---------- Masjid search ----------
+class TestMasjidSearch:
+    @pytest.mark.parametrize("term", ["(", "[", "*", "a(b", "+", "?"])
+    def test_regex_metacharacters_do_not_500(self, term):
+        """The search box is a substring search; metacharacters must not blow up."""
+        r = requests.get(
+            f"{BASE_URL}/api/masjids", headers=HEADERS,
+            params={"search": term}, timeout=20,
+        )
+        assert r.status_code == 200, r.text
+        assert isinstance(r.json(), list)
+
+    def test_metacharacters_match_literally(self):
+        r = requests.post(
+            f"{BASE_URL}/api/masjids", headers=HEADERS,
+            json={"name": "TEST_Regex_(paren)"}, timeout=20,
+        )
+        assert r.status_code == 200, r.text
+        mid = r.json()["masjid_id"]
+        try:
+            s = requests.get(
+                f"{BASE_URL}/api/masjids", headers=HEADERS,
+                params={"search": "(paren)"}, timeout=20,
+            )
+            assert s.status_code == 200, s.text
+            assert any(m["masjid_id"] == mid for m in s.json()), \
+                "literal '(paren)' should match the masjid named TEST_Regex_(paren)"
+        finally:
+            requests.delete(f"{BASE_URL}/api/masjids/{mid}", headers=HEADERS, timeout=20)
+
+
 # ---------- Export as binary ----------
 SAMPLE = [
     {"date": "2026-01-01", "fajr_azan": "05:20", "fajr_iqamah": "05:40",

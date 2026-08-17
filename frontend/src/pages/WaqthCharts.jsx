@@ -93,7 +93,7 @@ export default function WaqthCharts() {
                     {chart.state && <span className="text-xs text-[#5C6B64]">{chart.state}</span>}
                     {chart.country && <span className="text-xs text-[#5C6B64]">{chart.country}</span>}
                     <span className="text-xs text-[#5C6B64]">
-                      {chart.prayer_times?.length || 0} entries
+                      {chart.entries_count ?? chart.prayer_times?.length ?? 0} entries
                     </span>
                   </div>
                 </div>

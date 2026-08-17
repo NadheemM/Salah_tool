@@ -26,6 +26,14 @@ from reportlab.platypus import SimpleDocTemplate, Table as RLTable, TableStyle, 
 from reportlab.lib.styles import getSampleStyleSheet
 from reportlab.lib.units import inch
 
+# Works whether the app is started from backend/ (`server:app`) or from the
+# repo root (`backend.server:app`) — Render's start command is set in its
+# dashboard, not in this repo.
+try:
+    from indexes import ensure_indexes
+except ImportError:
+    from backend.indexes import ensure_indexes
+
 ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / '.env')
 
@@ -327,7 +335,14 @@ async def reset_password(data: ResetPasswordRequest):
 async def create_masjid(data: MasjidCreate, request: Request):
     user = await get_current_user(request)
     masjid_id = f"masjid_{uuid.uuid4().hex[:12]}"
-    serial_no = await db.masjids.count_documents({"user_id": user["user_id"]}) + 1
+    # Highest existing serial + 1, never a count: counting reuses a number after a
+    # delete, which would give two masjids the same M0xx ID.
+    last = await db.masjids.find_one(
+        {"user_id": user["user_id"]},
+        {"_id": 0, "serial_no": 1},
+        sort=[("serial_no", -1)]
+    )
+    serial_no = (last.get("serial_no") or 0) + 1 if last else 1
     doc = {
         "masjid_id": masjid_id,
         "serial_no": serial_no,
@@ -357,10 +372,13 @@ async def list_masjids(request: Request, search: Optional[str] = None):
     user = await get_current_user(request)
     query = {"user_id": user["user_id"]}
     if search:
+        # Escape so metacharacters match literally instead of erroring out — this is a
+        # substring search box, not a regex box.
+        safe = re.escape(search)
         search_conditions = [
-            {"name": {"$regex": search, "$options": "i"}},
-            {"mihrab_masjid_id": {"$regex": search, "$options": "i"}},
-            {"source": {"$regex": search, "$options": "i"}},
+            {"name": {"$regex": safe, "$options": "i"}},
+            {"mihrab_masjid_id": {"$regex": safe, "$options": "i"}},
+            {"source": {"$regex": safe, "$options": "i"}},
         ]
         try:
             serial_search = int(search.lstrip("Mm").lstrip("0") or "0")
@@ -439,7 +457,15 @@ async def create_waqth_chart(data: WaqthChartCreate, request: Request):
 @api_router.get("/waqth-charts")
 async def list_waqth_charts(request: Request):
     user = await get_current_user(request)
-    charts = await db.waqth_charts.find({"user_id": user["user_id"]}, {"_id": 0}).to_list(1000)
+    # Drop prayer_times from the list response — it is a full year of rows per chart and
+    # no caller of this endpoint reads it. The row count is all the list page needs.
+    charts = await db.waqth_charts.aggregate([
+        {"$match": {"user_id": user["user_id"]}},
+        {"$set": {"entries_count": {
+            "$cond": [{"$isArray": "$prayer_times"}, {"$size": "$prayer_times"}, 0]
+        }}},
+        {"$unset": ["_id", "prayer_times"]},
+    ]).to_list(1000)
     return charts
 
 @api_router.get("/waqth-charts/{chart_id}")
@@ -726,7 +752,9 @@ async def generate_salah(data: GenerateSalahRequest, request: Request):
     if not config:
         raise HTTPException(status_code=404, detail="Salah config not found. Please configure adjustments first.")
     
-    chart = await db.waqth_charts.find_one({"chart_id": config["waqth_chart_id"]}, {"_id": 0})
+    chart = await db.waqth_charts.find_one(
+        {"chart_id": config["waqth_chart_id"], "user_id": user["user_id"]}, {"_id": 0}
+    )
     if not chart:
         raise HTTPException(status_code=404, detail="Waqth chart not found")
     
@@ -928,6 +956,17 @@ app.add_middleware(
     allow_headers=["*"],
     expose_headers=["Content-Disposition"],
 )
+
+@app.on_event("startup")
+async def ensure_db_indexes():
+    # Idempotent, so this is a cheap no-op once the indexes exist. Never allowed
+    # to abort startup: serving without an index is slow, but not serving at all
+    # because an index build failed would be worse.
+    try:
+        count = await ensure_indexes(db)
+        logger.info(f"Ensured {count} database indexes")
+    except Exception as e:
+        logger.error(f"Could not ensure indexes: {type(e).__name__}: {e}")
 
 @app.on_event("shutdown")
 async def shutdown_db_client():
