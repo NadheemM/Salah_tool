@@ -933,32 +933,45 @@ async def generate_salah(data: GenerateSalahRequest, request: Request):
             rounding_rule = prayer_adj.get("rounding", "nearest_5")
             is_fixed_value = rounding_rule == FIXED_VALUE
 
-            if mode == "fixed":
-                fixed_time = prayer_adj.get("fixed_time", "")
-                gen_row[f"{prayer}_azan"] = fixed_time
-            elif is_fixed_value:
-                # The chart is ignored entirely — this time repeats on every row.
-                gen_row[f"{prayer}_azan"] = normalize_time_str(prayer_adj.get("fixed_azan", ""))
+            # The chart-derived time for this prayer. In Fixed Value mode it is the
+            # value whichever side is left dynamic falls back to, so it is computed
+            # up front using that mode's own rounding rule.
+            chart_rule = prayer_adj.get("fixed_rounding", "nearest_5") if is_fixed_value else rounding_rule
+            raw_time = find_prayer_value(row_lower, prayer, prayer_adj.get("column"))
+            parsed = parse_time_str(raw_time)
+            if parsed:
+                hour, minute = convert_12h_to_24h(parsed[0], parsed[1], prayer)
+                chart_time = round_time(format_time(hour, minute), chart_rule,
+                                        prayer_adj.get("custom_value", None)) or ""
             else:
-                # "column" pins which chart column to read when the chart offers
-                # more than one timing for this prayer (e.g. Shafi vs Hanafi Asr).
-                raw_time = find_prayer_value(row_lower, prayer, prayer_adj.get("column"))
-                custom_value = prayer_adj.get("custom_value", None)
-                # Parse and convert 12h to 24h for PM prayers
-                parsed = parse_time_str(raw_time)
-                if parsed:
-                    hour, minute = convert_12h_to_24h(parsed[0], parsed[1], prayer)
-                    time_24h = format_time(hour, minute)
-                    rounded = round_time(time_24h, rounding_rule, custom_value)
-                    gen_row[f"{prayer}_azan"] = rounded if rounded else ""
-                else:
-                    gen_row[f"{prayer}_azan"] = ""
+                chart_time = ""
+
+            # Absent checkboxes mean a config saved before they existed, where both
+            # sides were always constant — defaulting to True keeps those unchanged.
+            azan_is_fixed = bool(prayer_adj.get("azan_fixed", True))
+            fixed_azan = normalize_time_str(prayer_adj.get("fixed_azan", ""))
+
+            if mode == "fixed":
+                gen_row[f"{prayer}_azan"] = prayer_adj.get("fixed_time", "")
+            elif is_fixed_value:
+                gen_row[f"{prayer}_azan"] = fixed_azan if azan_is_fixed else chart_time
+            else:
+                gen_row[f"{prayer}_azan"] = chart_time
 
             # Iqamah calculation
             iqamah_offset = prayer_adj.get("iqamah_offset", 0)
             azan_val = gen_row[f"{prayer}_azan"]
+            iqamah_is_fixed = bool(prayer_adj.get("iqamah_fixed", True))
             fixed_iqamah = normalize_time_str(prayer_adj.get("fixed_iqamah", "")) if is_fixed_value else ""
-            if fixed_iqamah:
+
+            if is_fixed_value and not iqamah_is_fixed:
+                # Iqamah tracks the chart. With no offset it is simply the rounded
+                # chart time; with one, that time plus the offset.
+                base = chart_time
+                gen_row[f"{prayer}_iqamah"] = (
+                    add_minutes_to_time(base, iqamah_offset) if iqamah_offset and base else base
+                )
+            elif fixed_iqamah:
                 # An explicit iqamah wins; the offset is only the fallback.
                 gen_row[f"{prayer}_iqamah"] = fixed_iqamah
             elif iqamah_offset and azan_val:

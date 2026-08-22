@@ -7,6 +7,7 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Switch } from "@/components/ui/switch";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { toast } from "sonner";
 import { ArrowLeft, Save, Download, FileText, FileSpreadsheet, Pencil, X, Check, Plus, Trash2, Search } from "lucide-react";
@@ -678,30 +679,68 @@ export default function MasjidDetail() {
                                 </SelectContent>
                               </Select>
                             </div>
-                            {adj.rounding === "fixed_value" && (
-                              <>
-                                <div className="space-y-1">
-                                  <Label className="text-xs text-[#5C6B64]">Fixed Azan (HH:MM)</Label>
-                                  <Input
-                                    data-testid={`fixed-azan-${prayer}-${num}`}
-                                    value={adj.fixed_azan || ""}
-                                    onChange={(e) => updateAdjustment(chartNum, prayer, "fixed_azan", e.target.value)}
-                                    className="bg-white border-[#EAE6DD] h-8 text-xs"
-                                    placeholder="e.g. 05:20"
-                                  />
-                                </div>
-                                <div className="space-y-1">
-                                  <Label className="text-xs text-[#5C6B64]">Fixed Iqamah (HH:MM)</Label>
-                                  <Input
-                                    data-testid={`fixed-iqamah-${prayer}-${num}`}
-                                    value={adj.fixed_iqamah || ""}
-                                    onChange={(e) => updateAdjustment(chartNum, prayer, "fixed_iqamah", e.target.value)}
-                                    className="bg-white border-[#EAE6DD] h-8 text-xs"
-                                    placeholder="e.g. 06:00"
-                                  />
-                                </div>
-                              </>
-                            )}
+                            {adj.rounding === "fixed_value" && (() => {
+                              // Absent means true — configs saved before these boxes
+                              // existed had both sides constant.
+                              const azanFixed = adj.azan_fixed !== false;
+                              const iqamahFixed = adj.iqamah_fixed !== false;
+                              return (
+                                <>
+                                  <div className="space-y-1">
+                                    <Label className="text-xs text-[#5C6B64]">Rounding for non-fixed times</Label>
+                                    <Select
+                                      value={adj.fixed_rounding || "nearest_5"}
+                                      onValueChange={(v) => updateAdjustment(chartNum, prayer, "fixed_rounding", v)}
+                                    >
+                                      <SelectTrigger data-testid={`fixed-rounding-${prayer}-${num}`} className="bg-white border-[#EAE6DD] h-8 text-xs">
+                                        <SelectValue />
+                                      </SelectTrigger>
+                                      <SelectContent>
+                                        <SelectItem value="nearest_5">Nearest 5 min</SelectItem>
+                                        <SelectItem value="round_up_5">Round Up 5 min</SelectItem>
+                                        <SelectItem value="round_down_5">Round Down 5 min</SelectItem>
+                                      </SelectContent>
+                                    </Select>
+                                  </div>
+                                  <div className="space-y-1">
+                                    <div className="flex items-center gap-2">
+                                      <Checkbox
+                                        data-testid={`fix-azan-box-${prayer}-${num}`}
+                                        checked={azanFixed}
+                                        onCheckedChange={(c) => updateAdjustment(chartNum, prayer, "azan_fixed", c === true)}
+                                      />
+                                      <Label className="text-xs text-[#5C6B64]">Fixed Azan (HH:MM)</Label>
+                                    </div>
+                                    <Input
+                                      data-testid={`fixed-azan-${prayer}-${num}`}
+                                      value={adj.fixed_azan || ""}
+                                      onChange={(e) => updateAdjustment(chartNum, prayer, "fixed_azan", e.target.value)}
+                                      disabled={!azanFixed}
+                                      className="bg-white border-[#EAE6DD] h-8 text-xs disabled:bg-[#EAE6DD]/30 disabled:text-[#5C6B64]"
+                                      placeholder={azanFixed ? "e.g. 05:20" : "from waqth chart"}
+                                    />
+                                  </div>
+                                  <div className="space-y-1">
+                                    <div className="flex items-center gap-2">
+                                      <Checkbox
+                                        data-testid={`fix-iqamah-box-${prayer}-${num}`}
+                                        checked={iqamahFixed}
+                                        onCheckedChange={(c) => updateAdjustment(chartNum, prayer, "iqamah_fixed", c === true)}
+                                      />
+                                      <Label className="text-xs text-[#5C6B64]">Fixed Iqamah (HH:MM)</Label>
+                                    </div>
+                                    <Input
+                                      data-testid={`fixed-iqamah-${prayer}-${num}`}
+                                      value={adj.fixed_iqamah || ""}
+                                      onChange={(e) => updateAdjustment(chartNum, prayer, "fixed_iqamah", e.target.value)}
+                                      disabled={!iqamahFixed}
+                                      className="bg-white border-[#EAE6DD] h-8 text-xs disabled:bg-[#EAE6DD]/30 disabled:text-[#5C6B64]"
+                                      placeholder={iqamahFixed ? "e.g. 06:00" : "from waqth chart"}
+                                    />
+                                  </div>
+                                </>
+                              );
+                            })()}
                             {adj.rounding === "custom" && (
                               <div className="space-y-1">
                                 <Label className="text-xs text-[#5C6B64]">Add Minutes (0 = no change)</Label>
@@ -730,14 +769,22 @@ export default function MasjidDetail() {
                               />
                             </div>
                           </div>
-                          {adj.rounding === "fixed_value" && (
-                            <p className="text-[10px] text-[#5C6B64] mt-2">
-                              These times repeat on every row; the waqth chart is ignored for {PRAYER_LABELS[prayer]}.
-                              {adj.fixed_iqamah
-                                ? " Iqamah Offset is unused while Fixed Iqamah is filled."
-                                : " Leave Fixed Iqamah empty to use the Iqamah Offset instead."}
-                            </p>
-                          )}
+                          {adj.rounding === "fixed_value" && (() => {
+                            const azanFixed = adj.azan_fixed !== false;
+                            const iqamahFixed = adj.iqamah_fixed !== false;
+                            let msg;
+                            if (azanFixed && iqamahFixed) {
+                              msg = "Both times repeat on every row; the waqth chart is ignored for this prayer.";
+                            } else if (azanFixed) {
+                              msg = "Azan repeats on every row. Iqamah follows the waqth chart using the rounding above"
+                                + (adj.iqamah_offset ? `, plus ${adj.iqamah_offset} min.` : " (add an Iqamah Offset to shift it).");
+                            } else if (iqamahFixed) {
+                              msg = "Iqamah repeats on every row. Azan follows the waqth chart using the rounding above.";
+                            } else {
+                              msg = "Nothing is fixed — both follow the waqth chart using the rounding above.";
+                            }
+                            return <p className="text-[10px] text-[#5C6B64] mt-2">{msg}</p>;
+                          })()}
                           </>
                         )}
                       </div>

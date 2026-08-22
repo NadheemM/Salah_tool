@@ -485,6 +485,87 @@ class TestFixedValueRule:
         assert gen[1]["asr_azan"] == "15:36", gen[1]
 
 
+# ---------- Fixing only one side of Fixed Value ----------
+# FIXED_ROWS fajr is 05:14 / 05:17 / 05:20, so:
+#   nearest_5    -> 05:15, 05:15, 05:20
+#   round_up_5   -> 05:15, 05:20, 05:20
+#   round_down_5 -> 05:10, 05:15, 05:20
+class TestFixedValuePartial:
+    def _rows(self, fajr_adj):
+        cid = _make_chart("TEST_FixedPartial", FIXED_ROWS)
+        m = requests.post(f"{BASE_URL}/api/masjids", headers=HEADERS,
+                          json={"name": "TEST_FixedPartial_Masjid"}, timeout=20).json()["masjid_id"]
+        try:
+            _generate(m, cid, {"fajr": fajr_adj})
+            r = requests.post(f"{BASE_URL}/api/generate-salah", headers=HEADERS, timeout=30,
+                              json={"masjid_id": m, "chart_number": 1})
+            gen = r.json()["generated"]
+            return [g["fajr_azan"] for g in gen], [g["fajr_iqamah"] for g in gen]
+        finally:
+            requests.delete(f"{BASE_URL}/api/masjids/{m}", headers=HEADERS, timeout=20)
+            requests.delete(f"{BASE_URL}/api/waqth-charts/{cid}", headers=HEADERS, timeout=20)
+
+    def test_fixed_azan_dynamic_iqamah_no_offset(self):
+        """Azan constant; iqamah is just the rounded chart time."""
+        azan, iqamah = self._rows({"mode": "adjustment", "rounding": "fixed_value",
+                                   "fixed_rounding": "nearest_5", "azan_fixed": True,
+                                   "iqamah_fixed": False, "fixed_azan": "05:00"})
+        assert set(azan) == {"05:00"}, azan
+        assert iqamah == ["05:15", "05:15", "05:20"], iqamah
+
+    def test_fixed_azan_dynamic_iqamah_with_offset(self):
+        """Same, but the offset shifts the chart-derived iqamah."""
+        azan, iqamah = self._rows({"mode": "adjustment", "rounding": "fixed_value",
+                                   "fixed_rounding": "nearest_5", "azan_fixed": True,
+                                   "iqamah_fixed": False, "fixed_azan": "05:00",
+                                   "iqamah_offset": 20})
+        assert set(azan) == {"05:00"}, azan
+        assert iqamah == ["05:35", "05:35", "05:40"], iqamah
+
+    def test_fixed_iqamah_dynamic_azan(self):
+        """The useful case: azan tracks the chart, iqamah is a constant."""
+        azan, iqamah = self._rows({"mode": "adjustment", "rounding": "fixed_value",
+                                   "fixed_rounding": "nearest_5", "azan_fixed": False,
+                                   "iqamah_fixed": True, "fixed_iqamah": "06:00"})
+        assert azan == ["05:15", "05:15", "05:20"], azan
+        assert set(iqamah) == {"06:00"}, iqamah
+
+    def test_neither_fixed_behaves_like_normal_mode(self):
+        azan, iqamah = self._rows({"mode": "adjustment", "rounding": "fixed_value",
+                                   "fixed_rounding": "round_down_5", "azan_fixed": False,
+                                   "iqamah_fixed": False, "iqamah_offset": 10})
+        assert azan == ["05:10", "05:15", "05:20"], azan
+        assert iqamah == ["05:20", "05:25", "05:30"], iqamah
+
+    def test_both_fixed_is_all_constant(self):
+        azan, iqamah = self._rows({"mode": "adjustment", "rounding": "fixed_value",
+                                   "azan_fixed": True, "iqamah_fixed": True,
+                                   "fixed_azan": "05:20", "fixed_iqamah": "06:00"})
+        assert set(azan) == {"05:20"} and set(iqamah) == {"06:00"}
+
+    def test_second_rounding_rule_is_honoured(self):
+        for rule, want in [("nearest_5", ["05:15", "05:15", "05:20"]),
+                           ("round_up_5", ["05:15", "05:20", "05:20"]),
+                           ("round_down_5", ["05:10", "05:15", "05:20"])]:
+            azan, _ = self._rows({"mode": "adjustment", "rounding": "fixed_value",
+                                  "fixed_rounding": rule, "azan_fixed": False,
+                                  "iqamah_fixed": True, "fixed_iqamah": "06:00"})
+            assert azan == want, (rule, azan)
+
+    def test_legacy_config_without_checkboxes_unchanged(self):
+        """Configs saved before the checkboxes existed must still be all-constant."""
+        azan, iqamah = self._rows({"mode": "adjustment", "rounding": "fixed_value",
+                                   "fixed_azan": "05:20", "fixed_iqamah": "06:00"})
+        assert set(azan) == {"05:20"}, azan
+        assert set(iqamah) == {"06:00"}, iqamah
+
+    def test_legacy_blank_iqamah_still_falls_back_to_offset(self):
+        azan, iqamah = self._rows({"mode": "adjustment", "rounding": "fixed_value",
+                                   "fixed_azan": "05:20", "iqamah_offset": 40})
+        assert set(azan) == {"05:20"}, azan
+        assert set(iqamah) == {"06:00"}, iqamah
+
+
 # ---------- Masjid serial numbers ----------
 class TestMasjidSerialNumbers:
     def test_serial_not_reused_after_delete(self):
