@@ -15,6 +15,9 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "
 const PRAYERS = ["fajr", "sunrise", "zuhr", "asr", "maghrib", "isha"];
 const PRAYER_LABELS = { fajr: "Fajr", sunrise: "Sunrise", zuhr: "Zuhr", asr: "Asr", maghrib: "Maghrib", isha: "Isha", jummah: "Jummah" };
 const ALL_DISPLAY_PRAYERS = ["fajr", "sunrise", "zuhr", "asr", "maghrib", "isha", "jummah"];
+// Daily prayers written to CSV/Excel/PDF, in order. Sunrise is deliberately absent
+// and Jummah is appended separately because it carries a bayan column too.
+const EXPORT_PRAYERS = ["fajr", "zuhr", "asr", "maghrib", "isha"];
 
 export default function MasjidDetail() {
   const { id } = useParams();
@@ -220,13 +223,18 @@ export default function MasjidDetail() {
       return;
     }
     try {
+      // Fixed export layout — always these columns, always this order, whatever
+      // the chart contains. Note "iqama"/"jumma" spellings and no sunrise.
       const exportData = generatedData.map(row => {
-        const filtered = { date: row.date };
-        displayPrayers.forEach(p => {
-          filtered[`${p}_azan`] = row[`${p}_azan`] || "";
-          filtered[`${p}_iqamah`] = row[`${p}_iqamah`] || "";
+        const out = { month: row.month ?? "", day: row.day ?? "" };
+        EXPORT_PRAYERS.forEach(p => {
+          out[`${p}_azan`] = row[`${p}_azan`] || "";
+          out[`${p}_iqama`] = row[`${p}_iqamah`] || "";
         });
-        return filtered;
+        out.jumma_azan = row.jummah_azan || "";
+        out.jumma_iqama = row.jummah_iqamah || "";
+        out.jumma_bayan = row.jummah_bayan || "";
+        return out;
       });
       const token = localStorage.getItem('session_token');
       const headers = { 'Content-Type': 'application/json' };
@@ -653,9 +661,34 @@ export default function MasjidDetail() {
                                   <SelectItem value="round_up_5">Round Up 5 min</SelectItem>
                                   <SelectItem value="round_down_5">Round Down 5 min</SelectItem>
                                   <SelectItem value="custom">Custom Value</SelectItem>
+                                  <SelectItem value="fixed_value">Fixed Value</SelectItem>
                                 </SelectContent>
                               </Select>
                             </div>
+                            {adj.rounding === "fixed_value" && (
+                              <>
+                                <div className="space-y-1">
+                                  <Label className="text-xs text-[#5C6B64]">Fixed Azan (HH:MM)</Label>
+                                  <Input
+                                    data-testid={`fixed-azan-${prayer}-${num}`}
+                                    value={adj.fixed_azan || ""}
+                                    onChange={(e) => updateAdjustment(chartNum, prayer, "fixed_azan", e.target.value)}
+                                    className="bg-white border-[#EAE6DD] h-8 text-xs"
+                                    placeholder="e.g. 05:20"
+                                  />
+                                </div>
+                                <div className="space-y-1">
+                                  <Label className="text-xs text-[#5C6B64]">Fixed Iqamah (HH:MM)</Label>
+                                  <Input
+                                    data-testid={`fixed-iqamah-${prayer}-${num}`}
+                                    value={adj.fixed_iqamah || ""}
+                                    onChange={(e) => updateAdjustment(chartNum, prayer, "fixed_iqamah", e.target.value)}
+                                    className="bg-white border-[#EAE6DD] h-8 text-xs"
+                                    placeholder="e.g. 06:00"
+                                  />
+                                </div>
+                              </>
+                            )}
                             {adj.rounding === "custom" && (
                               <div className="space-y-1">
                                 <Label className="text-xs text-[#5C6B64]">Add Minutes (0 = no change)</Label>
@@ -684,6 +717,14 @@ export default function MasjidDetail() {
                               />
                             </div>
                           </div>
+                          {adj.rounding === "fixed_value" && (
+                            <p className="text-[10px] text-[#5C6B64] mt-2">
+                              These times repeat on every row; the waqth chart is ignored for {PRAYER_LABELS[prayer]}.
+                              {adj.fixed_iqamah
+                                ? " Iqamah Offset is unused while Fixed Iqamah is filled."
+                                : " Leave Fixed Iqamah empty to use the Iqamah Offset instead."}
+                            </p>
+                          )}
                           </>
                         )}
                       </div>
@@ -702,7 +743,7 @@ export default function MasjidDetail() {
                     <span className="text-sm font-medium text-[#1E2522]">Jummah</span>
                     <span className="text-xs text-[#5C6B64] px-2 py-0.5 bg-[#D4A373]/20 rounded">Fixed Time</span>
                   </div>
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                     <div className="space-y-1">
                       <Label className="text-xs text-[#5C6B64]">Jummah Azan Time (HH:MM)</Label>
                       <Input
@@ -714,6 +755,18 @@ export default function MasjidDetail() {
                       />
                     </div>
                     <div className="space-y-1">
+                      <Label className="text-xs text-[#5C6B64]">Bayan Offset (min)</Label>
+                      <Input
+                        data-testid={`bayan-offset-jummah-${num}`}
+                        type="number"
+                        min="0"
+                        value={currentConfig.adjustments.jummah?.bayan_offset || ""}
+                        onChange={(e) => updateAdjustment(chartNum, "jummah", "bayan_offset", parseInt(e.target.value) || 0)}
+                        className="bg-white border-[#EAE6DD] max-w-[150px]"
+                        placeholder="e.g., 30"
+                      />
+                    </div>
+                    <div className="space-y-1">
                       <Label className="text-xs text-[#5C6B64]">Iqamah Offset (min)</Label>
                       <Input
                         data-testid={`iqamah-offset-jummah-${num}`}
@@ -722,10 +775,17 @@ export default function MasjidDetail() {
                         value={currentConfig.adjustments.jummah?.iqamah_offset || ""}
                         onChange={(e) => updateAdjustment(chartNum, "jummah", "iqamah_offset", parseInt(e.target.value) || 0)}
                         className="bg-white border-[#EAE6DD] max-w-[150px]"
-                        placeholder="e.g., 30"
+                        placeholder="e.g., 60"
                       />
                     </div>
                   </div>
+                  {currentConfig.adjustments.jummah?.fixed_time && (
+                    <p className="text-[10px] text-[#5C6B64] mt-3">
+                      Azan {currentConfig.adjustments.jummah.fixed_time}
+                      {currentConfig.adjustments.jummah?.bayan_offset ? ` · Bayan +${currentConfig.adjustments.jummah.bayan_offset} min` : ""}
+                      {currentConfig.adjustments.jummah?.iqamah_offset ? ` · Iqamah +${currentConfig.adjustments.jummah.iqamah_offset} min` : ""}
+                    </p>
+                  )}
                 </div>
               </div>
 

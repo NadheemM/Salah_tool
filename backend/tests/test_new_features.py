@@ -86,7 +86,8 @@ class TestPeriodFormatParsing:
         gen = r.json()["generated"]
         for row in gen:
             for key, val in row.items():
-                if key == "date" or val == "":
+                # date/month/day describe the row, they are not times
+                if key in ("date", "month", "day") or val == "" or val is None:
                     continue
                 # All produced times must be HH:MM
                 assert len(val) == 5 and val[2] == ":", f"{key}={val} not HH:MM"
@@ -348,6 +349,141 @@ class TestMonthDateColumns:
         rows = [{"date": "5", "fajr": "05:14", "asr": "15:33"}]
         dates, _ = self._run(rows)
         assert dates == ["5"], dates
+
+
+# ---------- Numeric month/day + Jummah bayan for the export layout ----------
+class TestExportFields:
+    def _setup(self, rows, adjustments):
+        cid = _make_chart("TEST_Export_Fields", rows)
+        m = requests.post(f"{BASE_URL}/api/masjids", headers=HEADERS,
+                          json={"name": "TEST_Export_Masjid"}, timeout=20).json()["masjid_id"]
+        return cid, m, _generate(m, cid, adjustments)
+
+    def _cleanup(self, cid, m):
+        requests.delete(f"{BASE_URL}/api/masjids/{m}", headers=HEADERS, timeout=20)
+        requests.delete(f"{BASE_URL}/api/waqth-charts/{cid}", headers=HEADERS, timeout=20)
+
+    def test_month_and_day_are_numeric(self):
+        """Exports need month and day as their own numbers, not just a label."""
+        rows = [{"month": "January", "date": "1", "fajr": "05:14", "asr": "15:33"},
+                {"month": "February", "date": "24", "fajr": "05:20", "asr": "15:40"}]
+        cid, m, _ = self._setup(rows, {"asr": NO_ROUNDING})
+        try:
+            r = requests.post(f"{BASE_URL}/api/generate-salah", headers=HEADERS, timeout=30,
+                              json={"masjid_id": m, "chart_number": 1})
+            gen = r.json()["generated"]
+            assert (gen[0]["month"], gen[0]["day"]) == (1, 1), gen[0]
+            assert (gen[1]["month"], gen[1]["day"]) == (2, 24), gen[1]
+            assert gen[0]["date"] == "1/1"
+        finally:
+            self._cleanup(cid, m)
+
+    def test_month_day_derived_from_combined_date(self):
+        """Charts with only a 'date' column still yield numeric month/day."""
+        rows = [{"date": "5/3", "fajr": "05:14"}, {"date": "2026-01-15", "fajr": "05:14"}]
+        cid, m, _ = self._setup(rows, {"fajr": NO_ROUNDING})
+        try:
+            r = requests.post(f"{BASE_URL}/api/generate-salah", headers=HEADERS, timeout=30,
+                              json={"masjid_id": m, "chart_number": 1})
+            gen = r.json()["generated"]
+            assert (gen[0]["month"], gen[0]["day"]) == (3, 5), gen[0]
+            assert (gen[1]["month"], gen[1]["day"]) == (1, 15), gen[1]
+        finally:
+            self._cleanup(cid, m)
+
+    def test_jummah_bayan_from_offset(self):
+        """Bayan is azan + bayan_offset, like iqamah."""
+        rows = [{"month": "January", "date": "1", "fajr": "05:14"}]
+        adj = {"jummah": {"fixed_time": "12:30", "bayan_offset": 30, "iqamah_offset": 60}}
+        cid, m, gen = self._setup(rows, adj)
+        try:
+            assert gen["jummah_azan"] == "12:30", gen
+            assert gen["jummah_bayan"] == "13:00", gen
+            assert gen["jummah_iqamah"] == "13:30", gen
+        finally:
+            self._cleanup(cid, m)
+
+    def test_jummah_bayan_empty_without_offset(self):
+        rows = [{"month": "January", "date": "1", "fajr": "05:14"}]
+        cid, m, gen = self._setup(rows, {"jummah": {"fixed_time": "12:30"}})
+        try:
+            assert gen["jummah_bayan"] == "", gen
+        finally:
+            self._cleanup(cid, m)
+
+
+# ---------- "Fixed Value" rounding rule ----------
+FIXED_ROWS = [
+    {"month": "January", "date": "1", "fajr": "05:14", "zuhar": "12:27",
+     "asr": "15:33", "magrib": "18:02", "isha": "19:17"},
+    {"month": "January", "date": "6", "fajr": "05:17", "zuhar": "12:30",
+     "asr": "15:36", "magrib": "18:05", "isha": "19:20"},
+    {"month": "February", "date": "1", "fajr": "05:20", "zuhar": "12:33",
+     "asr": "15:39", "magrib": "18:08", "isha": "19:23"},
+]
+
+
+class TestFixedValueRule:
+    def _rows(self, adjustments):
+        cid = _make_chart("TEST_FixedValue", FIXED_ROWS)
+        m = requests.post(f"{BASE_URL}/api/masjids", headers=HEADERS,
+                          json={"name": "TEST_FixedValue_Masjid"}, timeout=20).json()["masjid_id"]
+        try:
+            _generate(m, cid, adjustments)
+            r = requests.post(f"{BASE_URL}/api/generate-salah", headers=HEADERS, timeout=30,
+                              json={"masjid_id": m, "chart_number": 1})
+            return r.json()["generated"]
+        finally:
+            requests.delete(f"{BASE_URL}/api/masjids/{m}", headers=HEADERS, timeout=20)
+            requests.delete(f"{BASE_URL}/api/waqth-charts/{cid}", headers=HEADERS, timeout=20)
+
+    def test_same_time_on_every_row(self):
+        """The whole point of 'fixed': the chart is ignored and nothing varies."""
+        gen = self._rows({"fajr": {"mode": "adjustment", "rounding": "fixed_value",
+                                   "fixed_azan": "05:20", "fixed_iqamah": "06:00"}})
+        assert {r["fajr_azan"] for r in gen} == {"05:20"}, [r["fajr_azan"] for r in gen]
+        assert {r["fajr_iqamah"] for r in gen} == {"06:00"}, [r["fajr_iqamah"] for r in gen]
+
+    def test_empty_fixed_iqamah_falls_back_to_offset(self):
+        gen = self._rows({"fajr": {"mode": "adjustment", "rounding": "fixed_value",
+                                   "fixed_azan": "05:20", "iqamah_offset": 40}})
+        assert gen[0]["fajr_azan"] == "05:20", gen[0]
+        assert gen[0]["fajr_iqamah"] == "06:00", gen[0]
+
+    def test_fixed_iqamah_wins_over_offset(self):
+        gen = self._rows({"fajr": {"mode": "adjustment", "rounding": "fixed_value",
+                                   "fixed_azan": "05:20", "fixed_iqamah": "06:30",
+                                   "iqamah_offset": 40}})
+        assert gen[0]["fajr_iqamah"] == "06:30", gen[0]
+
+    def test_typed_time_is_normalised(self):
+        """'5:2' style input still lands as HH:MM in the output."""
+        gen = self._rows({"fajr": {"mode": "adjustment", "rounding": "fixed_value",
+                                   "fixed_azan": "5:20", "fixed_iqamah": "6:00"}})
+        assert gen[0]["fajr_azan"] == "05:20", gen[0]
+        assert gen[0]["fajr_iqamah"] == "06:00", gen[0]
+
+    def test_applies_to_all_five_prayers(self):
+        adj = {p: {"mode": "adjustment", "rounding": "fixed_value",
+                   "fixed_azan": t, "fixed_iqamah": i}
+               for p, t, i in [("fajr", "05:20", "06:00"), ("zuhr", "12:45", "13:05"),
+                               ("asr", "16:35", "16:55"), ("maghrib", "18:17", "18:20"),
+                               ("isha", "19:40", "20:00")]}
+        gen = self._rows(adj)
+        for p, t, i in [("fajr", "05:20", "06:00"), ("zuhr", "12:45", "13:05"),
+                        ("asr", "16:35", "16:55"), ("maghrib", "18:17", "18:20"),
+                        ("isha", "19:40", "20:00")]:
+            assert {r[f"{p}_azan"] for r in gen} == {t}, p
+            assert {r[f"{p}_iqamah"] for r in gen} == {i}, p
+
+    def test_other_prayers_still_read_the_chart(self):
+        """Fixing one prayer must not disturb the others."""
+        gen = self._rows({"fajr": {"mode": "adjustment", "rounding": "fixed_value",
+                                   "fixed_azan": "05:20"},
+                          "asr": NO_ROUNDING})
+        assert gen[0]["fajr_azan"] == "05:20"
+        assert gen[0]["asr_azan"] == "15:33", gen[0]
+        assert gen[1]["asr_azan"] == "15:36", gen[1]
 
 
 # ---------- Masjid serial numbers ----------

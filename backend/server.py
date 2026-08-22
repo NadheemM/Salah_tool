@@ -683,6 +683,22 @@ def round_time(time_str, rule, custom_value=None):
         # No rounding - just normalize format
         return format_time(hour, minute)
 
+# Rounding rule that ignores the chart and repeats a typed time on every row.
+FIXED_VALUE = "fixed_value"
+
+def normalize_time_str(value):
+    """Tidy a time the user typed into HH:MM ('5:20' -> '05:20').
+
+    Deliberately no AM/PM guessing: a fixed time is taken literally, so '6:00'
+    stays 06:00 even for Maghrib. Unparseable input is returned untouched rather
+    than silently dropped.
+    """
+    s = str(value).strip()
+    if not s:
+        return ""
+    parsed = parse_time_str(s)
+    return format_time(parsed[0], parsed[1]) if parsed else s
+
 def add_minutes_to_time(time_str, minutes):
     """Add minutes to a time string HH:MM"""
     if not time_str or time_str == "":
@@ -776,14 +792,38 @@ def _month_number(month_val):
     except (ValueError, TypeError):
         return MONTH_NAMES.get(month_val.lower(), 0)
 
-def build_row_date(row_lower):
-    """Build the date label for one generated row.
+def _split_date_label(label):
+    """Pull (day, month) out of an already-formed date label.
+
+    Handles the app's own 'D/M' output and ISO 'YYYY-MM-DD' from spreadsheets.
+    Returns (None, None) for anything it cannot read confidently.
+    """
+    s = str(label).strip()
+    if "-" in s:  # ISO: 2026-01-15
+        parts = s.split("-")
+        if len(parts) == 3:
+            try:
+                return int(parts[2]), int(parts[1])
+            except ValueError:
+                return None, None
+    if "/" in s:  # the app writes day/month
+        parts = s.split("/")
+        if len(parts) >= 2:
+            try:
+                return int(float(parts[0])), int(float(parts[1]))
+            except ValueError:
+                return None, None
+    return None, None
+
+def build_row_date_parts(row_lower):
+    """Return (label, day, month) for one chart row.
 
     Charts split the date up in three different ways:
       - one 'date' column holding the whole date          -> used as-is
       - 'month' + 'day' columns                           -> combined
       - 'month' + a 'date' column holding only the day    -> combined
-    The third shape used to fall through and print just the day, losing the month.
+    `day` and `month` are ints when they can be determined, else None; exports
+    need them as their own columns.
     """
     raw_date = row_lower.get("date", "")
     month_val = str(row_lower.get("month", "")).strip()
@@ -797,17 +837,25 @@ def build_row_date(row_lower):
             except (ValueError, TypeError):
                 day_num = 0
             if month_num and day_num:
-                return f"{day_num}/{month_num}"
-            return f"{day_val}/{month_val}"
-        return raw_date
+                return f"{day_num}/{month_num}", day_num, month_num
+            return f"{day_val}/{month_val}", None, None
+        return raw_date, None, None
 
     # A 'date' column that is only a day number is meaningless without its month.
     if month_val:
         day_num = _day_number(raw_date)
         if day_num:
             month_num = _month_number(month_val)
-            return f"{day_num}/{month_num}" if month_num else f"{day_num}/{month_val}"
-    return raw_date
+            if month_num:
+                return f"{day_num}/{month_num}", day_num, month_num
+            return f"{day_num}/{month_val}", day_num, None
+
+    day_num, month_num = _split_date_label(raw_date)
+    return raw_date, day_num, month_num
+
+def build_row_date(row_lower):
+    """The date label only — see build_row_date_parts."""
+    return build_row_date_parts(row_lower)[0]
 
 def find_prayer_value(row_lower, prayer, column=None):
     """Find prayer time value using multiple aliases and partial matching.
@@ -875,20 +923,27 @@ async def generate_salah(data: GenerateSalahRequest, request: Request):
     for row in prayer_times:
         # Normalize all keys to lowercase for lookup
         row_lower = {k.lower().strip(): v for k, v in row.items()}
-        date_val = build_row_date(row_lower)
-        gen_row = {"date": date_val}
+        date_val, day_num, month_num = build_row_date_parts(row_lower)
+        # month/day are carried alongside the label because exports need them as
+        # their own numeric columns.
+        gen_row = {"date": date_val, "month": month_num, "day": day_num}
         for prayer in PRAYERS:
             prayer_adj = adjustments.get(prayer, {})
             mode = prayer_adj.get("mode", "adjustment")  # "adjustment" or "fixed"
             
+            rounding_rule = prayer_adj.get("rounding", "nearest_5")
+            is_fixed_value = rounding_rule == FIXED_VALUE
+
             if mode == "fixed":
                 fixed_time = prayer_adj.get("fixed_time", "")
                 gen_row[f"{prayer}_azan"] = fixed_time
+            elif is_fixed_value:
+                # The chart is ignored entirely — this time repeats on every row.
+                gen_row[f"{prayer}_azan"] = normalize_time_str(prayer_adj.get("fixed_azan", ""))
             else:
                 # "column" pins which chart column to read when the chart offers
                 # more than one timing for this prayer (e.g. Shafi vs Hanafi Asr).
                 raw_time = find_prayer_value(row_lower, prayer, prayer_adj.get("column"))
-                rounding_rule = prayer_adj.get("rounding", "nearest_5")
                 custom_value = prayer_adj.get("custom_value", None)
                 # Parse and convert 12h to 24h for PM prayers
                 parsed = parse_time_str(raw_time)
@@ -899,11 +954,15 @@ async def generate_salah(data: GenerateSalahRequest, request: Request):
                     gen_row[f"{prayer}_azan"] = rounded if rounded else ""
                 else:
                     gen_row[f"{prayer}_azan"] = ""
-            
+
             # Iqamah calculation
             iqamah_offset = prayer_adj.get("iqamah_offset", 0)
             azan_val = gen_row[f"{prayer}_azan"]
-            if iqamah_offset and azan_val:
+            fixed_iqamah = normalize_time_str(prayer_adj.get("fixed_iqamah", "")) if is_fixed_value else ""
+            if fixed_iqamah:
+                # An explicit iqamah wins; the offset is only the fallback.
+                gen_row[f"{prayer}_iqamah"] = fixed_iqamah
+            elif iqamah_offset and azan_val:
                 gen_row[f"{prayer}_iqamah"] = add_minutes_to_time(azan_val, iqamah_offset)
             else:
                 gen_row[f"{prayer}_iqamah"] = ""
@@ -917,7 +976,14 @@ async def generate_salah(data: GenerateSalahRequest, request: Request):
             gen_row["jummah_iqamah"] = add_minutes_to_time(jummah_time, jummah_iqamah_offset)
         else:
             gen_row["jummah_iqamah"] = ""
-        
+        # Bayan (the Friday talk) sits between azan and iqamah, set as an offset
+        # from azan the same way iqamah is.
+        bayan_offset = jummah_adj.get("bayan_offset", 0)
+        if bayan_offset and jummah_time:
+            gen_row["jummah_bayan"] = add_minutes_to_time(jummah_time, bayan_offset)
+        else:
+            gen_row["jummah_bayan"] = ""
+
         generated.append(gen_row)
 
     # Only include prayers that have at least one non-empty azan value
