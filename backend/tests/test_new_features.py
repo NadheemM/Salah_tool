@@ -195,6 +195,161 @@ class TestMasjidEditNewFields:
         requests.delete(f"{BASE_URL}/api/masjids/{mid}", headers=HEADERS, timeout=20)
 
 
+# ---------- Two timings for one prayer (Shafi / Hanafi) ----------
+# Mixed case on purpose: real charts arrive as "asr Shafi", and column names are
+# normalised to lowercase before matching.
+DUAL_ROWS = [
+    {"month": "January", "date": "1", "fajr": "05:14", "zuhar": "12:27",
+     "asr Shafi": "15:33", "asr Hanafi": "16:19", "magrib": "18:02",
+     "isha shafi": "19:17", "isha Hanafi": "19:26"},
+]
+# Same values, Hanafi listed first — the layout that silently flipped the output.
+FLIPPED_ROWS = [
+    {"month": "January", "date": "1", "fajr": "05:14", "zuhar": "12:27",
+     "asr Hanafi": "16:19", "asr Shafi": "15:33", "magrib": "18:02",
+     "isha Hanafi": "19:26", "isha shafi": "19:17"},
+]
+NO_ROUNDING = {"mode": "adjustment", "rounding": "custom", "custom_value": 0}
+
+
+def _make_chart(name, rows):
+    r = requests.post(f"{BASE_URL}/api/waqth-charts", headers=HEADERS,
+                      json={"name": name, "prayer_times": rows}, timeout=20)
+    assert r.status_code == 200, r.text
+    return r.json()["chart_id"]
+
+
+def _generate(masjid_id, chart_id, adjustments, chart_number=1):
+    requests.post(f"{BASE_URL}/api/salah-configs", headers=HEADERS, timeout=20,
+                  json={"masjid_id": masjid_id, "chart_number": chart_number,
+                        "waqth_chart_id": chart_id, "adjustments": adjustments})
+    r = requests.post(f"{BASE_URL}/api/generate-salah", headers=HEADERS, timeout=30,
+                      json={"masjid_id": masjid_id, "chart_number": chart_number})
+    assert r.status_code == 200, r.text
+    return r.json()["generated"][0]
+
+
+class TestDualTimings:
+    def test_variants_detected_and_labelled(self):
+        cid = _make_chart("TEST_Dual", DUAL_ROWS)
+        try:
+            r = requests.get(f"{BASE_URL}/api/waqth-charts/{cid}/columns",
+                             headers=HEADERS, timeout=20)
+            assert r.status_code == 200, r.text
+            variants = r.json()["variants"]
+            assert set(variants) == {"asr", "isha"}, f"got {list(variants)}"
+            assert [v["label"] for v in variants["asr"]] == ["Shafi", "Hanafi"]
+            assert [v["column"] for v in variants["asr"]] == ["asr shafi", "asr hanafi"]
+            assert [v["label"] for v in variants["isha"]] == ["Shafi", "Hanafi"]
+        finally:
+            requests.delete(f"{BASE_URL}/api/waqth-charts/{cid}", headers=HEADERS, timeout=20)
+
+    def test_single_timing_chart_has_no_variants(self):
+        cid = _make_chart("TEST_Single", [{"date": "1", "fajr": "05:14", "asr": "15:33"}])
+        try:
+            r = requests.get(f"{BASE_URL}/api/waqth-charts/{cid}/columns",
+                             headers=HEADERS, timeout=20)
+            assert r.json()["variants"] == {}
+        finally:
+            requests.delete(f"{BASE_URL}/api/waqth-charts/{cid}", headers=HEADERS, timeout=20)
+
+    def test_pinned_column_selects_the_right_timing(self):
+        cid = _make_chart("TEST_Dual_Pin", DUAL_ROWS)
+        m = requests.post(f"{BASE_URL}/api/masjids", headers=HEADERS,
+                          json={"name": "TEST_Dual_Masjid"}, timeout=20).json()["masjid_id"]
+        try:
+            hanafi = _generate(m, cid, {
+                "asr": {**NO_ROUNDING, "column": "asr hanafi"},
+                "isha": {**NO_ROUNDING, "column": "isha hanafi"}})
+            assert hanafi["asr_azan"] == "16:19", hanafi
+            assert hanafi["isha_azan"] == "19:26", hanafi
+
+            shafi = _generate(m, cid, {
+                "asr": {**NO_ROUNDING, "column": "asr shafi"},
+                "isha": {**NO_ROUNDING, "column": "isha shafi"}})
+            assert shafi["asr_azan"] == "15:33", shafi
+            assert shafi["isha_azan"] == "19:17", shafi
+
+            # Mixed selection is allowed — the choice is per prayer.
+            mixed = _generate(m, cid, {
+                "asr": {**NO_ROUNDING, "column": "asr hanafi"},
+                "isha": {**NO_ROUNDING, "column": "isha shafi"}})
+            assert mixed["asr_azan"] == "16:19" and mixed["isha_azan"] == "19:17", mixed
+        finally:
+            requests.delete(f"{BASE_URL}/api/masjids/{m}", headers=HEADERS, timeout=20)
+            requests.delete(f"{BASE_URL}/api/waqth-charts/{cid}", headers=HEADERS, timeout=20)
+
+    def test_config_without_column_keeps_old_behaviour(self):
+        """Regression guard: configs saved before this feature must not change."""
+        cid = _make_chart("TEST_Dual_Legacy", DUAL_ROWS)
+        m = requests.post(f"{BASE_URL}/api/masjids", headers=HEADERS,
+                          json={"name": "TEST_Legacy_Masjid"}, timeout=20).json()["masjid_id"]
+        try:
+            row = _generate(m, cid, {"asr": NO_ROUNDING, "isha": NO_ROUNDING})
+            assert row["asr_azan"] == "15:33", row
+            assert row["isha_azan"] == "19:17", row
+        finally:
+            requests.delete(f"{BASE_URL}/api/masjids/{m}", headers=HEADERS, timeout=20)
+            requests.delete(f"{BASE_URL}/api/waqth-charts/{cid}", headers=HEADERS, timeout=20)
+
+    def test_pinned_column_survives_reordered_columns(self):
+        """Pinning by column name, not position, is what removes the order hazard."""
+        cid = _make_chart("TEST_Dual_Flipped", FLIPPED_ROWS)
+        m = requests.post(f"{BASE_URL}/api/masjids", headers=HEADERS,
+                          json={"name": "TEST_Flipped_Masjid"}, timeout=20).json()["masjid_id"]
+        try:
+            # Unpinned, the first column wins — here that is Hanafi.
+            unpinned = _generate(m, cid, {"asr": NO_ROUNDING})
+            assert unpinned["asr_azan"] == "16:19", unpinned
+            # Pinned to Shafi, position is irrelevant.
+            pinned = _generate(m, cid, {"asr": {**NO_ROUNDING, "column": "asr shafi"}})
+            assert pinned["asr_azan"] == "15:33", pinned
+        finally:
+            requests.delete(f"{BASE_URL}/api/masjids/{m}", headers=HEADERS, timeout=20)
+            requests.delete(f"{BASE_URL}/api/waqth-charts/{cid}", headers=HEADERS, timeout=20)
+
+
+# ---------- Date built from separate month / date columns ----------
+class TestMonthDateColumns:
+    def _run(self, rows):
+        cid = _make_chart("TEST_MonthDate", rows)
+        m = requests.post(f"{BASE_URL}/api/masjids", headers=HEADERS,
+                          json={"name": "TEST_MonthDate_Masjid"}, timeout=20).json()["masjid_id"]
+        try:
+            gen = _generate(m, cid, {"asr": NO_ROUNDING})
+            r = requests.post(f"{BASE_URL}/api/generate-salah", headers=HEADERS, timeout=30,
+                              json={"masjid_id": m, "chart_number": 1})
+            return [row["date"] for row in r.json()["generated"]], gen
+        finally:
+            requests.delete(f"{BASE_URL}/api/masjids/{m}", headers=HEADERS, timeout=20)
+            requests.delete(f"{BASE_URL}/api/waqth-charts/{cid}", headers=HEADERS, timeout=20)
+
+    def test_month_plus_day_in_date_column(self):
+        """'month'=January + 'date'=1 must render as 1/1, not 1."""
+        rows = [{"month": m, "date": str(d), "fajr": "05:14", "asr": "15:33"}
+                for m in ("January", "February") for d in (1, 6, 24)]
+        dates, _ = self._run(rows)
+        assert dates == ["1/1", "6/1", "24/1", "1/2", "6/2", "24/2"], dates
+
+    def test_full_date_column_is_left_alone(self):
+        """A date column that already holds a real date must not be rewritten."""
+        rows = [{"month": "January", "date": "01/01", "fajr": "05:14", "asr": "15:33"},
+                {"month": "January", "date": "2026-01-15", "fajr": "05:15", "asr": "15:34"}]
+        dates, _ = self._run(rows)
+        assert dates == ["01/01", "2026-01-15"], dates
+
+    def test_month_plus_day_columns_still_work(self):
+        """The original month+day shape must keep working."""
+        rows = [{"month": "3", "day": "5", "fajr": "05:14", "asr": "15:33"}]
+        dates, _ = self._run(rows)
+        assert dates == ["5/3"], dates
+
+    def test_bare_day_without_month_column_unchanged(self):
+        rows = [{"date": "5", "fajr": "05:14", "asr": "15:33"}]
+        dates, _ = self._run(rows)
+        assert dates == ["5"], dates
+
+
 # ---------- Masjid serial numbers ----------
 class TestMasjidSerialNumbers:
     def test_serial_not_reused_after_delete(self):

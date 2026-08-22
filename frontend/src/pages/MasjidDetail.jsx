@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo, useCallback } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import axios from "axios";
 import { API } from "@/App";
@@ -32,13 +32,29 @@ export default function MasjidDetail() {
   const [editForm, setEditForm] = useState({});
   const [newMember, setNewMember] = useState({ name: "", number: "", address: "" });
   const [dateFilter, setDateFilter] = useState("");
-  const [chartColumns, setChartColumns] = useState([]);
+  // Keyed by chart number — chart 1 and chart 2 can point at different waqth charts
+  const [chartColumns, setChartColumns] = useState({});
+  const [chartVariants, setChartVariants] = useState({});
 
   // Config state for chart 1 and 2
   const [configForm, setConfigForm] = useState({
     1: { waqth_chart_id: "", adjustments: {} },
     2: { waqth_chart_id: "", adjustments: {} }
   });
+
+  // Fetch chart columns (and any prayers the chart gives two timings for) for one tab
+  const fetchChartColumns = useCallback(async (chartNum, chartId) => {
+    if (!chartId) {
+      setChartColumns(prev => ({ ...prev, [chartNum]: [] }));
+      setChartVariants(prev => ({ ...prev, [chartNum]: {} }));
+      return;
+    }
+    try {
+      const res = await axios.get(`${API}/waqth-charts/${chartId}/columns`, { withCredentials: true });
+      setChartColumns(prev => ({ ...prev, [chartNum]: res.data.columns || [] }));
+      setChartVariants(prev => ({ ...prev, [chartNum]: res.data.variants || {} }));
+    } catch {}
+  }, []);
 
   useEffect(() => {
     const fetchData = async () => {
@@ -60,6 +76,13 @@ export default function MasjidDetail() {
           };
         });
         setConfigForm(newForm);
+        // Load columns/variants for already-configured charts, otherwise the
+        // timing selector would only appear after re-picking the chart.
+        [1, 2].forEach(num => {
+          if (newForm[num].waqth_chart_id) {
+            fetchChartColumns(num, newForm[num].waqth_chart_id);
+          }
+        });
       } catch (err) {
         toast.error("Failed to load masjid details");
         navigate("/masjids");
@@ -68,16 +91,7 @@ export default function MasjidDetail() {
       }
     };
     fetchData();
-  }, [id, navigate]);
-
-  // Fetch chart columns when waqth chart is selected
-  const fetchChartColumns = async (chartId) => {
-    if (!chartId) return;
-    try {
-      const res = await axios.get(`${API}/waqth-charts/${chartId}/columns`, { withCredentials: true });
-      setChartColumns(res.data.columns || []);
-    } catch {}
-  };
+  }, [id, navigate, fetchChartColumns]);
 
   // Only show prayers that have at least one non-empty azan in the generated data
   const displayPrayers = useMemo(() => {
@@ -521,7 +535,7 @@ export default function MasjidDetail() {
                       ...prev,
                       [parseInt(num)]: { ...prev[parseInt(num)], waqth_chart_id: v }
                     }));
-                    fetchChartColumns(v);
+                    fetchChartColumns(parseInt(num), v);
                   }}
                 >
                   <SelectTrigger data-testid={`select-waqth-chart-${num}`} className="bg-white border-[#EAE6DD]">
@@ -535,9 +549,9 @@ export default function MasjidDetail() {
                     ))}
                   </SelectContent>
                 </Select>
-                {chartColumns.length > 0 && (
+                {(chartColumns[parseInt(num)] || []).length > 0 && (
                   <p className="text-xs text-[#5C6B64] mt-2">
-                    Chart columns: {chartColumns.join(", ")}
+                    Chart columns: {chartColumns[parseInt(num)].join(", ")}
                   </p>
                 )}
               </div>
@@ -591,6 +605,39 @@ export default function MasjidDetail() {
                             </div>
                           </div>
                         ) : (
+                          <>
+                            {(chartVariants[chartNum]?.[prayer] || []).length > 1 && (
+                              <div className="mb-3 p-3 rounded-lg bg-[#D4A373]/10 border border-[#D4A373]/40">
+                                <Label className="text-xs text-[#5C6B64] block mb-2">
+                                  This chart has {chartVariants[chartNum][prayer].length} timings for {PRAYER_LABELS[prayer]} — choose which one to use
+                                </Label>
+                                <div className="flex flex-wrap gap-2">
+                                  {chartVariants[chartNum][prayer].map((v, i) => {
+                                    // No saved choice means generation falls back to the
+                                    // chart's first matching column, so show that as active.
+                                    const selected = adj.column ? adj.column === v.column : i === 0;
+                                    return (
+                                      <button
+                                        key={v.column}
+                                        type="button"
+                                        data-testid={`variant-${prayer}-${num}-${i}`}
+                                        onClick={() => updateAdjustment(chartNum, prayer, "column", v.column)}
+                                        className={`px-3 py-1.5 text-xs rounded-lg border transition-colors ${
+                                          selected
+                                            ? "bg-[#2B5336] text-white border-[#2B5336] font-medium"
+                                            : "bg-white text-[#1E2522] border-[#EAE6DD] hover:bg-[#EAE6DD]/50"
+                                        }`}
+                                      >
+                                        {v.label}
+                                      </button>
+                                    );
+                                  })}
+                                </div>
+                                <p className="text-[10px] text-[#5C6B64] mt-2">
+                                  Using column: <span className="font-mono">{adj.column || chartVariants[chartNum][prayer][0].column}</span>
+                                </p>
+                              </div>
+                            )}
                           <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                             <div className="space-y-1">
                               <Label className="text-xs text-[#5C6B64]">Rounding Rule</Label>
@@ -637,6 +684,7 @@ export default function MasjidDetail() {
                               />
                             </div>
                           </div>
+                          </>
                         )}
                       </div>
                     );

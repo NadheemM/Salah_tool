@@ -488,7 +488,17 @@ async def get_waqth_chart_columns(chart_id: str, request: Request):
         columns = list(prayer_times[0].keys())
     else:
         columns = []
-    return {"columns": columns, "chart_name": chart.get("name", "")}
+    # Prayers this chart gives more than one timing for — the user has to pick which
+    # one to use. Prayers with a single column are omitted, so an ordinary chart
+    # returns {} and nothing changes in the UI.
+    variants = {}
+    for prayer in PRAYERS:
+        matches = find_prayer_columns(columns, prayer)
+        if len(matches) > 1:
+            variants[prayer] = [
+                {"column": c, "label": variant_label(c, prayer)} for c in matches
+            ]
+    return {"columns": columns, "chart_name": chart.get("name", ""), "variants": variants}
 
 @api_router.delete("/waqth-charts/{chart_id}")
 async def delete_waqth_chart(chart_id: str, request: Request):
@@ -708,20 +718,120 @@ PRAYER_ALIASES = {
 # Prayers that are PM (if hour < 12, should add 12 for 24h conversion)
 PM_PRAYERS = {"zuhr", "asr", "maghrib", "isha"}
 
-def find_prayer_value(row_lower, prayer):
-    """Find prayer time value using multiple aliases and partial matching"""
+def _usable(val):
+    """A cell holds a real value (not blank or a placeholder)."""
+    return bool(val) and str(val).strip() not in ("", "-", "nan", "None")
+
+def _matches_prayer(key, alias):
+    """Whether a chart column belongs to a prayer. Shared by value lookup and
+    variant detection so the two can never disagree about what matches."""
+    return alias in key or key in alias
+
+def find_prayer_columns(columns, prayer):
+    """Every column that could supply this prayer, in the chart's own order.
+
+    A chart with 'asr shafi' and 'asr hanafi' returns both — that is what lets the
+    user choose, instead of silently getting whichever column came first.
+    """
+    aliases = PRAYER_ALIASES.get(prayer, [prayer])
+    found = []
+    for key in columns:
+        k = str(key).lower().strip()
+        if any(_matches_prayer(k, alias) for alias in aliases) and k not in found:
+            found.append(k)
+    return found
+
+def variant_label(column, prayer):
+    """Human label for a column: 'asr hanafi' -> 'Hanafi'.
+
+    Strips the prayer name and any separators, leaving whatever qualifier the chart
+    author used, so unfamiliar labels work without a code change.
+    """
+    aliases = sorted(PRAYER_ALIASES.get(prayer, [prayer]), key=len, reverse=True)
+    leftover = str(column).lower().strip()
+    for alias in aliases:
+        if alias in leftover:
+            leftover = leftover.replace(alias, " ", 1)
+            break
+    leftover = re.sub(r"[^\w\s']+", " ", leftover).strip()
+    # capitalize() rather than title() so "shafi'i" stays "Shafi'i", not "Shafi'I"
+    return " ".join(w.capitalize() for w in leftover.split()) or str(column)
+
+def _day_number(value):
+    """Return 1-31 when the cell holds a bare day-of-month, otherwise None.
+
+    float() rejects anything already formatted as a date ("01/01", "2026-01-01"),
+    which is what keeps those columns from being mistaken for a day number.
+    """
+    try:
+        day = int(float(str(value).strip()))
+    except (ValueError, TypeError):
+        return None
+    return day if 1 <= day <= 31 else None
+
+def _month_number(month_val):
+    """Month column to 1-12, accepting either a number or a name ('January')."""
+    try:
+        return int(float(month_val))
+    except (ValueError, TypeError):
+        return MONTH_NAMES.get(month_val.lower(), 0)
+
+def build_row_date(row_lower):
+    """Build the date label for one generated row.
+
+    Charts split the date up in three different ways:
+      - one 'date' column holding the whole date          -> used as-is
+      - 'month' + 'day' columns                           -> combined
+      - 'month' + a 'date' column holding only the day    -> combined
+    The third shape used to fall through and print just the day, losing the month.
+    """
+    raw_date = row_lower.get("date", "")
+    month_val = str(row_lower.get("month", "")).strip()
+    day_val = str(row_lower.get("day", "")).strip()
+
+    if not raw_date:
+        if month_val and day_val:
+            month_num = _month_number(month_val)
+            try:
+                day_num = int(float(day_val))
+            except (ValueError, TypeError):
+                day_num = 0
+            if month_num and day_num:
+                return f"{day_num}/{month_num}"
+            return f"{day_val}/{month_val}"
+        return raw_date
+
+    # A 'date' column that is only a day number is meaningless without its month.
+    if month_val:
+        day_num = _day_number(raw_date)
+        if day_num:
+            month_num = _month_number(month_val)
+            return f"{day_num}/{month_num}" if month_num else f"{day_num}/{month_val}"
+    return raw_date
+
+def find_prayer_value(row_lower, prayer, column=None):
+    """Find prayer time value using multiple aliases and partial matching.
+
+    `column` pins the lookup to one specific chart column (set when the user has
+    chosen between two timings). Without it the original fallback runs unchanged,
+    so configs saved before this feature generate exactly what they always did.
+    """
+    if column:
+        val = row_lower.get(str(column).lower().strip(), "")
+        if _usable(val):
+            return str(val)
     aliases = PRAYER_ALIASES.get(prayer, [prayer])
     # Exact match first
     for alias in aliases:
         val = row_lower.get(alias, "")
-        if val and str(val).strip() not in ("", "-", "nan", "None"):
+        if _usable(val):
             return str(val)
     # Partial match - check if any key contains the prayer name or alias
     for key in row_lower:
         for alias in aliases:
-            if alias in key or key in alias:
+            if _matches_prayer(key, alias):
                 val = row_lower.get(key, "")
-                if val and str(val).strip() not in ("", "-", "nan", "None"):
+                if _usable(val):
                     return str(val)
     return ""
 
@@ -765,23 +875,7 @@ async def generate_salah(data: GenerateSalahRequest, request: Request):
     for row in prayer_times:
         # Normalize all keys to lowercase for lookup
         row_lower = {k.lower().strip(): v for k, v in row.items()}
-        date_val = row_lower.get("date", "")
-        if not date_val:
-            month_val = str(row_lower.get("month", "")).strip()
-            day_val = str(row_lower.get("day", "")).strip()
-            if month_val and day_val:
-                try:
-                    month_num = int(float(month_val))
-                except (ValueError, TypeError):
-                    month_num = MONTH_NAMES.get(month_val.lower(), 0)
-                try:
-                    day_num = int(float(day_val))
-                except (ValueError, TypeError):
-                    day_num = 0
-                if month_num and day_num:
-                    date_val = f"{day_num}/{month_num}"
-                else:
-                    date_val = f"{day_val}/{month_val}"
+        date_val = build_row_date(row_lower)
         gen_row = {"date": date_val}
         for prayer in PRAYERS:
             prayer_adj = adjustments.get(prayer, {})
@@ -791,7 +885,9 @@ async def generate_salah(data: GenerateSalahRequest, request: Request):
                 fixed_time = prayer_adj.get("fixed_time", "")
                 gen_row[f"{prayer}_azan"] = fixed_time
             else:
-                raw_time = find_prayer_value(row_lower, prayer)
+                # "column" pins which chart column to read when the chart offers
+                # more than one timing for this prayer (e.g. Shafi vs Hanafi Asr).
+                raw_time = find_prayer_value(row_lower, prayer, prayer_adj.get("column"))
                 rounding_rule = prayer_adj.get("rounding", "nearest_5")
                 custom_value = prayer_adj.get("custom_value", None)
                 # Parse and convert 12h to 24h for PM prayers
