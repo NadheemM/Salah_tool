@@ -712,7 +712,7 @@ def add_minutes_to_time(time_str, minutes):
     new_minute = total_minutes % 60
     return format_time(new_hour, new_minute)
 
-PRAYERS = ["fajr", "sunrise", "zuhr", "asr", "maghrib", "isha"]
+PRAYERS = ["fajr", "zuhr", "asr", "maghrib", "isha"]
 
 MONTH_NAMES = {
     "january": 1, "february": 2, "march": 3, "april": 4, "may": 5, "june": 6,
@@ -724,7 +724,6 @@ MONTH_NAMES = {
 # Common aliases for prayer column names in uploaded charts
 PRAYER_ALIASES = {
     "fajr": ["fajr", "fajar", "fajir", "subh", "subuh", "fjar", "fazr"],
-    "sunrise": ["sunrise", "shuruq", "shurooq", "ishraq", "tulu", "rise"],
     "zuhr": ["zuhr", "dhuhr", "zohr", "duhr", "luhr", "zuhar", "duhur", "zuhur", "zhur"],
     "asr": ["asr", "asar", "assr", "aasr", "aser", "assar", "acer"],
     "maghrib": ["maghrib", "magrib", "magreb", "maghreb", "magrib", "magrb", "mgrib"],

@@ -12,11 +12,11 @@ import { toast } from "sonner";
 import { ArrowLeft, Save, Download, FileText, FileSpreadsheet, Pencil, X, Check, Plus, Trash2, Search } from "lucide-react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 
-const PRAYERS = ["fajr", "sunrise", "zuhr", "asr", "maghrib", "isha"];
-const PRAYER_LABELS = { fajr: "Fajr", sunrise: "Sunrise", zuhr: "Zuhr", asr: "Asr", maghrib: "Maghrib", isha: "Isha", jummah: "Jummah" };
-const ALL_DISPLAY_PRAYERS = ["fajr", "sunrise", "zuhr", "asr", "maghrib", "isha", "jummah"];
-// Daily prayers written to CSV/Excel/PDF, in order. Sunrise is deliberately absent
-// and Jummah is appended separately because it carries a bayan column too.
+const PRAYERS = ["fajr", "zuhr", "asr", "maghrib", "isha"];
+const PRAYER_LABELS = { fajr: "Fajr", zuhr: "Zuhr", asr: "Asr", maghrib: "Maghrib", isha: "Isha", jummah: "Jummah" };
+const ALL_DISPLAY_PRAYERS = ["fajr", "zuhr", "asr", "maghrib", "isha", "jummah"];
+// Daily prayers written to CSV/Excel/PDF, in order. Jummah is appended separately
+// because it carries a bayan column too.
 const EXPORT_PRAYERS = ["fajr", "zuhr", "asr", "maghrib", "isha"];
 
 export default function MasjidDetail() {

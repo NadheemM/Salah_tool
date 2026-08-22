@@ -132,7 +132,6 @@ def main():
             "waqth_chart_id": PLAIN_CHART,
             "adjustments": {
                 "fajr": {"mode": "adjustment", "rounding": "round_up_5", "iqamah_offset": 20},
-                "sunrise": {"mode": "adjustment", "rounding": "nearest_5", "iqamah_offset": 0},
                 "zuhr": {"mode": "fixed", "fixed_time": "13:00", "iqamah_offset": 15},
                 "asr": {"mode": "adjustment", "rounding": "nearest_5", "iqamah_offset": 10},
                 "maghrib": {"mode": "adjustment", "rounding": "nearest_5", "iqamah_offset": 5},

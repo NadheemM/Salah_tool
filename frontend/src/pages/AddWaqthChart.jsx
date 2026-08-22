@@ -55,7 +55,7 @@ export default function AddWaqthChart() {
         prayerTimes = JSON.parse(manualData);
       }
     } catch {
-      toast.error("Invalid JSON format. Use array of objects with date, fajr, sunrise, zuhr, asr, maghrib, isha fields.");
+      toast.error("Invalid JSON format. Use array of objects with month, date, fajr, zuhr, asr, maghrib, isha fields.");
       return;
     }
 
@@ -157,7 +157,7 @@ export default function AddWaqthChart() {
                   {file ? file.name : "Click to upload CSV or Excel file"}
                 </p>
                 <p className="text-xs text-[#5C6B64] mt-1">
-                  Columns: date, fajr, sunrise, zuhr, asr, maghrib, isha
+                  Columns: month, date, fajr, zuhr, asr, maghrib, isha
                 </p>
               </label>
             </div>
@@ -192,10 +192,10 @@ export default function AddWaqthChart() {
                 onChange={(e) => setManualData(e.target.value)}
                 rows={8}
                 className="w-full p-3 text-sm border border-[#EAE6DD] rounded-lg bg-white font-mono resize-y focus:ring-2 focus:ring-[#2B5336] focus:border-[#2B5336] outline-none"
-                placeholder={`[\n  {"date": "1", "fajr": "4:36", "sunrise": "5:52", "zuhr": "12:15", "asr": "15:45", "maghrib": "18:32", "isha": "19:48"},\n  {"date": "2", "fajr": "4:37", "sunrise": "5:53", "zuhr": "12:15", "asr": "15:44", "maghrib": "18:31", "isha": "19:47"}\n]`}
+                placeholder={`[\n  {"month": "January", "date": "1", "fajr": "4:36", "zuhr": "12:15", "asr": "15:45", "maghrib": "18:32", "isha": "19:48"},\n  {"month": "January", "date": "2", "fajr": "4:37", "zuhr": "12:15", "asr": "15:44", "maghrib": "18:31", "isha": "19:47"}\n]`}
               />
               <p className="text-xs text-[#5C6B64]">
-                Enter prayer times as JSON array. Each entry needs: date, fajr, sunrise, zuhr, asr, maghrib, isha
+                Enter prayer times as JSON array. Each entry needs: month, date, fajr, zuhr, asr, maghrib, isha
               </p>
             </div>
             <div className="flex gap-3">
