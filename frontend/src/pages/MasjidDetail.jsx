@@ -178,21 +178,26 @@ export default function MasjidDetail() {
     }));
   };
 
-  const handleSaveConfig = async (chartNum) => {
+  // Persist whatever is currently on screen for this tab.
+  const persistConfig = async (chartNum) => {
     const cfg = configForm[chartNum];
-    if (!cfg.waqth_chart_id) {
+    await axios.post(`${API}/salah-configs`, {
+      masjid_id: id,
+      chart_number: parseInt(chartNum),
+      waqth_chart_id: cfg.waqth_chart_id,
+      adjustments: cfg.adjustments
+    }, { withCredentials: true });
+    setLastSaved(prev => ({ ...prev, [chartNum]: new Date() }));
+  };
+
+  const handleSaveConfig = async (chartNum) => {
+    if (!configForm[chartNum].waqth_chart_id) {
       toast.error("Please select a waqth chart");
       return;
     }
     setSaving(true);
     try {
-      await axios.post(`${API}/salah-configs`, {
-        masjid_id: id,
-        chart_number: parseInt(chartNum),
-        waqth_chart_id: cfg.waqth_chart_id,
-        adjustments: cfg.adjustments
-      }, { withCredentials: true });
-      setLastSaved(prev => ({ ...prev, [chartNum]: new Date() }));
+      await persistConfig(chartNum);
       toast.success(`Chart ${chartNum} configuration saved`);
     } catch (err) {
       toast.error("Failed to save configuration");
@@ -202,8 +207,16 @@ export default function MasjidDetail() {
   };
 
   const handleGenerate = async (chartNum) => {
+    if (!configForm[chartNum].waqth_chart_id) {
+      toast.error("Please select a waqth chart");
+      return;
+    }
     setGenerating(true);
     try {
+      // Save first: generating straight from the server's last-saved config used to
+      // silently ignore edits still sitting on screen, producing a table that did
+      // not match the settings above it.
+      await persistConfig(chartNum);
       const res = await axios.post(`${API}/generate-salah`, {
         masjid_id: id,
         chart_number: parseInt(chartNum)
@@ -211,7 +224,7 @@ export default function MasjidDetail() {
       setGeneratedData(res.data.generated);
       toast.success("Salah times generated");
     } catch (err) {
-      toast.error(err.response?.data?.detail || "Failed to generate. Save config first.");
+      toast.error(err.response?.data?.detail || "Failed to generate");
     } finally {
       setGenerating(false);
     }
@@ -929,7 +942,7 @@ export default function MasjidDetail() {
             </DialogTitle>
           </DialogHeader>
           <p className="text-sm text-[#5C6B64]">
-            You are about to generate salah times based on the current saved configuration. Please ensure the configuration has been saved before proceeding.
+            Your configuration above will be saved and the salah times regenerated from it. Any previously generated table will be replaced.
           </p>
           <DialogFooter className="gap-2 sm:gap-0">
             <button
